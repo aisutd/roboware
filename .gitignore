@@ -1,0 +1,22 @@
+# Python virtual environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Frontend dependencies and build output
+node_modules/
+dist/
+
+# Local environment variables
+.env
+.env.*
+!.env.example
+
+# Generated simulation and training output
+runs/
+checkpoints/
+
+# Operating system files
+.DS_Store
+Thumbs.db
