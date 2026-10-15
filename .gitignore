@@ -20,3 +20,5 @@ checkpoints/
 # Operating system files
 .DS_Store
 Thumbs.db
+# RoboWare backend data (SQLite database and trained models)
+backend/data/
