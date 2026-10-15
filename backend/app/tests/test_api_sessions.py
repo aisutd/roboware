@@ -121,3 +121,28 @@ def test_compare_runs_each_configuration(client):
     assert runs[0]["label"] == "No model · A*"
     too_many = {"runs": [{"routing_mode": "astar"}] * 7}
     assert client.post("/api/compare", json=too_many).status_code == 422
+
+
+def test_model_with_a_different_grid_size_falls_back_to_astar(client):
+    model = client.post("/api/models", json={"name": "Small", "hyperparameters": {"episodes_per_destination": 20}}).json()
+    wait_for_job(client, client.post(f"/api/models/{model['id']}/train", json={}).json()["id"])
+    cells = [["aisle"] * 20 for _ in range(10)]
+    for x in (4, 5, 9, 10, 14, 15):
+        for y in (1, 2, 3, 5, 6, 7):
+            cells[y][x] = "rack"
+    cells[2][18], cells[8][18], cells[2][0] = "packing", "dock", "charger"
+    wide = client.post("/api/layouts", json={"name": "Wide", "width": 20, "height": 10, "cells": cells})
+    assert wide.status_code == 201, wide.text
+    s = create(client, layout_id=wide.json()["id"], model_id=model["id"], routing_mode="q_only",
+               stop={"type": "ticks", "value": 60})
+    assert any("grid" in w for w in s["warnings"])
+    for _ in range(60):
+        assert control(client, s["id"], "step").status_code == 200
+    compare = client.post("/api/compare", json={"layout_id": wide.json()["id"], "ticks": 60, "robot_count": 2,
+                                                "runs": [{"model_id": model["id"], "routing_mode": "q_only"}]})
+    assert compare.status_code == 200
+
+
+def test_order_size_weights_must_sum_above_zero(client):
+    assert client.post("/api/sessions", json={"orders": {"size_weights": [0, 0, 0]}}).status_code == 422
+    assert client.post("/api/sessions", json={"orders": {"size_weights": [1, -1, 0]}}).status_code == 422

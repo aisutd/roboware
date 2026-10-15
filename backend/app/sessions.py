@@ -66,7 +66,12 @@ class SessionManager:
         if config.model_id:
             row, hp, qtables, _ = load_model(self.storage, config.model_id)
             model_name = row["name"]
-            if row["layout_fingerprint"] != layout.fingerprint():
+            if (qtables.width, qtables.height) != (layout.width, layout.height):
+                if config.online_learning:
+                    raise ValueError("Online learning needs a model trained on a grid of the same size as the layout.")
+                warnings.append(f"This model's grid is {qtables.width}x{qtables.height} but the layout is "
+                                f"{layout.width}x{layout.height}, so every leg uses A*.")
+            elif row["layout_fingerprint"] != layout.fingerprint():
                 warnings.append("This model was trained on a different layout; destinations without a table fall back to A*.")
             if len(qtables) == 0:
                 warnings.append("This model has no trained destinations yet, so every leg uses A*.")

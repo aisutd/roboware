@@ -46,6 +46,8 @@ class Simulator:
         self.layout = layout
         self.config = config
         self.hp = hyperparameters or Hyperparameters()
+        if qtables is not None and (qtables.width, qtables.height) != (layout.width, layout.height):
+            qtables = None  # tables from a different grid size cannot be indexed here; every leg uses A*
         if qtables is not None and config.online_learning:
             qtables = qtables.copy()
         self.qtables = qtables
@@ -91,6 +93,7 @@ class Simulator:
         self._arrivals(events)
         self._dispatch(events)
         positions = {r.id: r.pos for r in self.robots}
+        priority = {r.id: self._priority(r, i) for i, r in enumerate(self.robots)}
         intents: dict[str, Cell] = {}
         for r in self.robots:
             r.q_step = None
@@ -98,10 +101,9 @@ class Simulator:
                 spot = self._parking_spot(r)
                 if spot is not None:
                     self._go(r, "parking", spot)
-            nxt = self._plan(r, positions, events)
+            nxt = self._plan(r, positions, priority, events)
             if nxt is not None:
                 intents[r.id] = nxt
-        priority = {r.id: self._priority(r, i) for i, r in enumerate(self.robots)}
         moves, yielded = resolve_moves(positions, intents, priority)
         for r in self.robots:
             if r.id in moves:
@@ -246,7 +248,14 @@ class Simulator:
             return True
         return any(o.id != rid and o.pos == cell and o.status == "charging" for o in self.robots)
 
-    def _plan(self, r: Robot, positions: dict[str, Cell], events: list[dict]) -> Cell | None:
+    def _patience(self, r: Robot, priority: dict[str, tuple]) -> int:
+        """Waits before re-planning. Staggered by collision priority so two blocked robots never back off in
+        the same tick (that livelocks): the lowest-priority robot gives way first, higher ones hold their ground."""
+        rank = sorted(priority, key=priority.get).index(r.id)  # 0 = highest priority
+        return MAX_WAIT + 2 * (len(priority) - 1 - rank)
+
+    def _plan(self, r: Robot, positions: dict[str, Cell], priority: dict[str, tuple],
+              events: list[dict]) -> Cell | None:
         if r.target is None or r.pos == r.target or r.status in WORKING or r.status == "charging":
             return None
         if manhattan(r.pos, r.target) == 1 and self._busy(r.target, r.id):
@@ -255,10 +264,7 @@ class Simulator:
             return None
         if r.status == "queued_pack":
             r.status = "to_pack"
-        # Stagger the patience by robot so two blocked robots never back off in the same tick
-        # (that livelocks): the lowest-priority robot gives way first, the other holds its ground.
-        patience = MAX_WAIT + 2 * (len(self.robots) - 1 - self.robots.index(r))
-        if r.wait_ticks > patience:
+        if r.wait_ticks > self._patience(r, priority):
             r.wait_ticks = 0
             return self._detour(r, positions)
         if len(r.detour) > 1 and r.detour[0] == r.pos:

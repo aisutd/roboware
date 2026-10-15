@@ -208,3 +208,14 @@ def test_snapshot_shape(trained):
     assert {"id", "x", "y", "battery", "status", "path", "q_scores", "carrying", "target", "heading"} <= set(robot)
     assert snap["stations"][0].keys() == {"x", "y", "occupant", "remaining"}
     assert snap["stats"]["tick"] == 30
+
+
+def test_deadlock_patience_follows_collision_priority_not_list_order():
+    sim = make(robots=8)
+    r1, r8 = sim.robots[0], sim.robots[7]
+    r8.package_id = "PKG-X"  # carrying outranks the empty robots
+    priority = {r.id: sim._priority(r, i) for i, r in enumerate(sim.robots)}
+    # Higher priority holds its ground longer; the lowest-priority robot gives way after MAX_WAIT.
+    assert sim._patience(r8, priority) > sim._patience(r1, priority)
+    lowest = max(sim.robots, key=lambda r: priority[r.id])
+    assert sim._patience(lowest, priority) == 3

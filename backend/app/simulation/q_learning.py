@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from dataclasses import fields
 from typing import Callable
 
 import numpy as np
@@ -174,11 +175,47 @@ def _check_table(rows, n_states: int) -> np.ndarray:
     return arr
 
 
+def _number(value, name: str, kind=float, minimum=None):
+    """Coerce a JSON value to int/float, rejecting booleans, strings and nulls with a clear ValueError."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or (kind is int and value != int(value)):
+        raise ValueError(f'"{name}" must be a {"whole number" if kind is int else "number"}.')
+    value = kind(value)
+    if minimum is not None and value < minimum:
+        raise ValueError(f'"{name}" must be at least {minimum}.')
+    return value
+
+
+def _hyperparameters(data) -> Hyperparameters:
+    if data is None:
+        return Hyperparameters()
+    if not isinstance(data, dict):
+        raise ValueError('"hyperparameters" must be an object.')
+    hp = Hyperparameters.from_dict(data)
+    for f in fields(Hyperparameters):
+        value = getattr(hp, f.name)
+        default = getattr(Hyperparameters(), f.name)
+        if isinstance(default, bool):
+            if not isinstance(value, bool):
+                raise ValueError(f'Hyperparameter "{f.name}" must be true or false.')
+        else:
+            setattr(hp, f.name, _number(value, f.name, type(default), 1 if isinstance(default, int) else None))
+    return hp
+
+
+def _histories(data) -> dict:
+    if data is None:
+        return {}
+    if not isinstance(data, dict) or not all(isinstance(v, dict) for v in data.values()):
+        raise ValueError('"training_history" must be an object of per-destination histories.')
+    return data
+
+
 def import_model(data, width: int = 16, height: int = 10) -> tuple[dict, Hyperparameters, QTableSet, dict]:
     if not isinstance(data, dict):
         raise ValueError("Model file must be a JSON object.")
     if "destinations" in data:
-        w, h = int(data.get("width", width)), int(data.get("height", height))
+        w = _number(data.get("width", width), "width", int, 1)
+        h = _number(data.get("height", height), "height", int, 1)
         if not isinstance(data["destinations"], dict):
             raise ValueError('"destinations" must be an object keyed by "x,y".')
         qt = QTableSet(w, h)
@@ -188,16 +225,19 @@ def import_model(data, width: int = 16, height: int = 10) -> tuple[dict, Hyperpa
             except ValueError as exc:
                 raise ValueError(f'Bad destination key "{key}".') from exc
             qt.set(dest, _check_table(entry.get("q_table") if isinstance(entry, dict) else None, w * h))
-        hp = Hyperparameters.from_dict(data.get("hyperparameters"))
-        return {k: data.get(k) for k in META_KEYS}, hp, qt, data.get("training_history") or {}
+        hp = _hyperparameters(data.get("hyperparameters"))
+        return {k: data.get(k) for k in META_KEYS}, hp, qt, _histories(data.get("training_history"))
     if "q_table" in data:
         table = _check_table(data["q_table"], width * height)
-        goal = data.get("goal") or [14, 8]
+        goal = data.get("goal", [14, 8])
+        if not (isinstance(goal, list) and len(goal) == 2):
+            raise ValueError('"goal" must be an [x, y] pair.')
+        goal = (_number(goal[0], "goal x", int, 0), _number(goal[1], "goal y", int, 0))
         hp = Hyperparameters(
-            step_reward=float(data.get("step_reward", -1)),
-            goal_reward=float(data.get("goal_reward", 10)),
-            discount_factor=float(data.get("discount_factor", 0.95)),
+            step_reward=_number(data.get("step_reward", -1), "step_reward"),
+            goal_reward=_number(data.get("goal_reward", 10), "goal_reward"),
+            discount_factor=_number(data.get("discount_factor", 0.95), "discount_factor"),
         )
-        qt = QTableSet(width, height, {(int(goal[0]), int(goal[1])): table})
+        qt = QTableSet(width, height, {goal: table})
         return {"name": data.get("name") or "Imported model"}, hp, qt, {}
     raise ValueError('Model file needs a "destinations" or "q_table" field.')

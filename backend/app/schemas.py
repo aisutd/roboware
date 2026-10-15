@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class HyperparametersIn(BaseModel):
@@ -51,6 +51,13 @@ class OrderSettingsIn(BaseModel):
     size_weights: list[float] = Field(default_factory=lambda: [0.5, 0.3, 0.2], min_length=1, max_length=3)
     rush_fraction: float = Field(0.1, ge=0, le=1)
     seed: int = 42
+
+    @field_validator("size_weights")
+    @classmethod
+    def _weights_usable(cls, weights: list[float]) -> list[float]:
+        if any(w < 0 for w in weights) or sum(weights) <= 0:
+            raise ValueError("order-size weights must be non-negative and add up to more than zero")
+        return weights
 
 
 class StopIn(BaseModel):

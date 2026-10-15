@@ -126,3 +126,18 @@ def test_qtableset_copy_is_deep():
     clone = qt.copy()
     clone.get((1, 1))[0, 0] = 5
     assert qt.get((1, 1))[0, 0] == 0
+
+
+@pytest.mark.parametrize("bad", [
+    {"destinations": {}, "width": None},
+    {"destinations": {}, "hyperparameters": [1, 2]},
+    {"destinations": {}, "hyperparameters": "x"},
+    {"destinations": {}, "hyperparameters": {"learning_rate": "abc"}},
+    {"destinations": {}, "training_history": [1, 2]},
+    {"q_table": [[0.0] * 4] * 160, "goal": [1]},
+    {"q_table": [[0.0] * 4] * 160, "goal": 5},
+    {"q_table": [[0.0] * 4] * 160, "step_reward": None},
+])
+def test_import_rejects_more_malformed_files_with_value_error(bad):
+    with pytest.raises(ValueError):
+        import_model(bad)
