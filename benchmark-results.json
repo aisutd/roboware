@@ -1,0 +1,320 @@
+{
+  "scope": "Single robot; fixed trained map; all reachable non-goal start/destination pairs",
+  "results": [
+    {
+      "seed": 7,
+      "episodes_per_goal": 3000,
+      "seconds": 2.213,
+      "tested_pairs": 1651,
+      "successes": 1651,
+      "success_rate": 1.0,
+      "mean_extra_steps": 0.010902483343428226,
+      "per_goal": {
+        "1,1": {
+          "tested": 127,
+          "successes": 127
+        },
+        "10,1": {
+          "tested": 127,
+          "successes": 127
+        },
+        "5,2": {
+          "tested": 127,
+          "successes": 127
+        },
+        "15,3": {
+          "tested": 127,
+          "successes": 127
+        },
+        "6,4": {
+          "tested": 127,
+          "successes": 127
+        },
+        "11,4": {
+          "tested": 127,
+          "successes": 127
+        },
+        "1,6": {
+          "tested": 127,
+          "successes": 127
+        },
+        "10,6": {
+          "tested": 127,
+          "successes": 127
+        },
+        "14,8": {
+          "tested": 127,
+          "successes": 127
+        },
+        "0,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "2,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "4,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "6,9": {
+          "tested": 127,
+          "successes": 127
+        }
+      }
+    },
+    {
+      "seed": 19,
+      "episodes_per_goal": 3000,
+      "seconds": 2.155,
+      "tested_pairs": 1651,
+      "successes": 1651,
+      "success_rate": 1.0,
+      "mean_extra_steps": 0.010902483343428226,
+      "per_goal": {
+        "1,1": {
+          "tested": 127,
+          "successes": 127
+        },
+        "10,1": {
+          "tested": 127,
+          "successes": 127
+        },
+        "5,2": {
+          "tested": 127,
+          "successes": 127
+        },
+        "15,3": {
+          "tested": 127,
+          "successes": 127
+        },
+        "6,4": {
+          "tested": 127,
+          "successes": 127
+        },
+        "11,4": {
+          "tested": 127,
+          "successes": 127
+        },
+        "1,6": {
+          "tested": 127,
+          "successes": 127
+        },
+        "10,6": {
+          "tested": 127,
+          "successes": 127
+        },
+        "14,8": {
+          "tested": 127,
+          "successes": 127
+        },
+        "0,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "2,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "4,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "6,9": {
+          "tested": 127,
+          "successes": 127
+        }
+      }
+    },
+    {
+      "seed": 42,
+      "episodes_per_goal": 3000,
+      "seconds": 2.179,
+      "tested_pairs": 1651,
+      "successes": 1651,
+      "success_rate": 1.0,
+      "mean_extra_steps": 0.010902483343428226,
+      "per_goal": {
+        "1,1": {
+          "tested": 127,
+          "successes": 127
+        },
+        "10,1": {
+          "tested": 127,
+          "successes": 127
+        },
+        "5,2": {
+          "tested": 127,
+          "successes": 127
+        },
+        "15,3": {
+          "tested": 127,
+          "successes": 127
+        },
+        "6,4": {
+          "tested": 127,
+          "successes": 127
+        },
+        "11,4": {
+          "tested": 127,
+          "successes": 127
+        },
+        "1,6": {
+          "tested": 127,
+          "successes": 127
+        },
+        "10,6": {
+          "tested": 127,
+          "successes": 127
+        },
+        "14,8": {
+          "tested": 127,
+          "successes": 127
+        },
+        "0,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "2,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "4,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "6,9": {
+          "tested": 127,
+          "successes": 127
+        }
+      }
+    },
+    {
+      "seed": 73,
+      "episodes_per_goal": 3000,
+      "seconds": 2.133,
+      "tested_pairs": 1651,
+      "successes": 1651,
+      "success_rate": 1.0,
+      "mean_extra_steps": 0.013325257419745608,
+      "per_goal": {
+        "1,1": {
+          "tested": 127,
+          "successes": 127
+        },
+        "10,1": {
+          "tested": 127,
+          "successes": 127
+        },
+        "5,2": {
+          "tested": 127,
+          "successes": 127
+        },
+        "15,3": {
+          "tested": 127,
+          "successes": 127
+        },
+        "6,4": {
+          "tested": 127,
+          "successes": 127
+        },
+        "11,4": {
+          "tested": 127,
+          "successes": 127
+        },
+        "1,6": {
+          "tested": 127,
+          "successes": 127
+        },
+        "10,6": {
+          "tested": 127,
+          "successes": 127
+        },
+        "14,8": {
+          "tested": 127,
+          "successes": 127
+        },
+        "0,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "2,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "4,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "6,9": {
+          "tested": 127,
+          "successes": 127
+        }
+      }
+    },
+    {
+      "seed": 101,
+      "episodes_per_goal": 3000,
+      "seconds": 2.269,
+      "tested_pairs": 1651,
+      "successes": 1651,
+      "success_rate": 1.0,
+      "mean_extra_steps": 0.009691096305269533,
+      "per_goal": {
+        "1,1": {
+          "tested": 127,
+          "successes": 127
+        },
+        "10,1": {
+          "tested": 127,
+          "successes": 127
+        },
+        "5,2": {
+          "tested": 127,
+          "successes": 127
+        },
+        "15,3": {
+          "tested": 127,
+          "successes": 127
+        },
+        "6,4": {
+          "tested": 127,
+          "successes": 127
+        },
+        "11,4": {
+          "tested": 127,
+          "successes": 127
+        },
+        "1,6": {
+          "tested": 127,
+          "successes": 127
+        },
+        "10,6": {
+          "tested": 127,
+          "successes": 127
+        },
+        "14,8": {
+          "tested": 127,
+          "successes": 127
+        },
+        "0,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "2,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "4,9": {
+          "tested": 127,
+          "successes": 127
+        },
+        "6,9": {
+          "tested": 127,
+          "successes": 127
+        }
+      }
+    }
+  ]
+}
