@@ -1,111 +1,371 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+/* ==========================================================================
+   ROBOWARE TACTILE CLAYMORPHISM DESIGN SYSTEM
+   Theme: Warm Alabaster Concrete, Matte Ceramic White, Architectural Cartography
+   ========================================================================== */
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --canvas-bg: #F4F1EA;
+  --canvas-hairline: #E6E1D6;
+  --card-bg: rgba(250, 248, 245, 0.95);
+  --card-border: rgba(255, 255, 255, 0.7);
+  --clay-btn-bg: #FAF8F5;
+  --clay-highlight: rgba(255, 255, 255, 0.95);
+  --clay-shadow-soft: rgba(35, 32, 26, 0.09);
+  --clay-shadow-dark: rgba(185, 176, 162, 0.35);
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* Tile Palette */
+  --tile-aisle: #EFECE4;
+  --tile-rack: #DDD6C7;
+  --tile-picking: #FF5A26;
+  --tile-packing: #2563EB;
+  --tile-delivery: #10B981;
+  --tile-charging: #F59E0B;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  /* Typography */
+  --font-ui: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  
+  /* Text Colors */
+  --text-primary: #23201A;
+  --text-secondary: #6B6357;
+  --text-tertiary: #9E9587;
+  --text-muted: #B8B0A2;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-body {
+html, body {
+  width: 100vw;
+  height: 100vh;
   margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: var(--canvas-bg);
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  user-select: none;
+  touch-action: none;
 }
 
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  overflow: hidden;
+  background-color: var(--canvas-bg);
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+/* --------------------------------------------------------------------------
+   CLAYMORPHIC SURFACES & BUTTONS
+   -------------------------------------------------------------------------- */
+
+.clay-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 1.5rem;
+  border: 1px solid var(--card-border);
+  box-shadow: 12px 16px 32px var(--clay-shadow-soft),
+              inset 3px 3px 6px var(--clay-highlight),
+              inset -3px -4px 8px var(--clay-shadow-dark);
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease, opacity 0.2s ease;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
+.clay-card-flat {
+  background: rgba(246, 243, 237, 0.9);
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 6px 8px 18px rgba(35, 32, 26, 0.06),
+              inset 2px 2px 4px rgba(255, 255, 255, 0.9),
+              inset -2px -2px 5px rgba(185, 176, 162, 0.25);
 }
 
-code,
-.counter {
-  font-family: var(--mono);
+.clay-btn {
   display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--clay-btn-bg);
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 9999px;
+  padding: 0.45rem 0.9rem;
+  font-family: var(--font-ui);
+  font-size: 0.825rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  box-shadow: 4px 6px 12px rgba(35, 32, 26, 0.08),
+              inset 2px 2px 4px rgba(255, 255, 255, 0.95),
+              inset -2px -2px 5px rgba(185, 176, 162, 0.3);
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+.clay-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 6px 8px 16px rgba(35, 32, 26, 0.11),
+              inset 2px 2px 5px rgba(255, 255, 255, 1),
+              inset -2px -2px 5px rgba(185, 176, 162, 0.35);
+}
+
+.clay-btn:active, .clay-btn.active, .clay-btn-active {
+  transform: scale(0.96);
+  background: #EAE5DC;
+  box-shadow: inset 3px 3px 6px rgba(35, 32, 26, 0.16),
+              inset -2px -2px 4px rgba(255, 255, 255, 0.7);
+  color: #171512;
+}
+
+.clay-btn-accent {
+  background: #FF5A26;
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 4px 6px 14px rgba(255, 90, 38, 0.35),
+              inset 2px 2px 4px rgba(255, 255, 255, 0.5),
+              inset -2px -2px 5px rgba(175, 45, 10, 0.5);
+}
+
+.clay-btn-accent:hover {
+  background: #E84F1D;
+  box-shadow: 6px 8px 18px rgba(255, 90, 38, 0.45),
+              inset 2px 2px 4px rgba(255, 255, 255, 0.6),
+              inset -2px -2px 5px rgba(175, 45, 10, 0.6);
+}
+
+.clay-btn-accent:active {
+  transform: scale(0.95);
+  box-shadow: inset 3px 3px 6px rgba(120, 25, 5, 0.4),
+              inset -2px -2px 4px rgba(255, 255, 255, 0.3);
+}
+
+.clay-pill-sm {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  border-radius: 9999px;
+}
+
+/* --------------------------------------------------------------------------
+   COORDINATES & TYPOGRAPHY
+   -------------------------------------------------------------------------- */
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.font-ui {
+  font-family: var(--font-ui);
+}
+
+.coord-label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --------------------------------------------------------------------------
+   3D TILE CLAY BEVELS
+   -------------------------------------------------------------------------- */
+
+.tile-base {
+  position: relative;
+  border-radius: 0.5rem;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  user-select: none;
+}
+
+/* Recessed Aisle Floor */
+.tile-aisle {
+  background-color: var(--tile-aisle);
+  box-shadow: inset 1px 1px 3px rgba(35, 32, 26, 0.08),
+              inset -1px -1px 2px rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(220, 214, 202, 0.4);
+}
+
+.tile-aisle:hover {
+  background-color: #F3F0EA;
+  box-shadow: inset 1px 1px 2px rgba(35, 32, 26, 0.04),
+              inset -1px -1px 3px rgba(255, 255, 255, 0.9);
+}
+
+/* 3D Sandstone Raised Storage Rack */
+.tile-rack {
+  background: linear-gradient(145deg, #E6DEC8 0%, #D8D0BF 100%);
+  background-color: var(--tile-rack);
+  border-radius: 0.45rem;
+  box-shadow: 2px 4px 8px rgba(35, 32, 26, 0.16),
+              inset 2px 2px 3px rgba(255, 255, 255, 0.8),
+              inset -2px -2px 4px rgba(160, 150, 135, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+/* Safety Orange Picking Pad */
+.tile-picking {
+  background: linear-gradient(135deg, #FF6F3D 0%, #FF5A26 100%);
+  border-radius: 0.5rem;
+  box-shadow: 2px 4px 9px rgba(255, 90, 38, 0.28),
+              inset 2px 2px 3px rgba(255, 255, 255, 0.6),
+              inset -2px -2px 4px rgba(180, 48, 12, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+/* Cobalt Blue Packing Station */
+.tile-packing {
+  background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+  border-radius: 0.5rem;
+  box-shadow: 2px 4px 9px rgba(37, 99, 235, 0.28),
+              inset 2px 2px 3px rgba(255, 255, 255, 0.6),
+              inset -2px -2px 4px rgba(20, 60, 160, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+/* Sage Emerald Delivery Goal */
+.tile-delivery {
+  background: linear-gradient(135deg, #34D399 0%, #10B981 100%);
+  border-radius: 0.5rem;
+  box-shadow: 2px 4px 10px rgba(16, 185, 129, 0.32),
+              inset 2px 2px 3px rgba(255, 255, 255, 0.7),
+              inset -2px -2px 4px rgba(6, 120, 80, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+/* Amber Gold Charging Dock */
+.tile-charging {
+  background: linear-gradient(135deg, #FBBF24 0%, #F59E0B 100%);
+  border-radius: 0.5rem;
+  box-shadow: 2px 4px 9px rgba(245, 158, 11, 0.3),
+              inset 2px 2px 3px rgba(255, 255, 255, 0.7),
+              inset -2px -2px 4px rgba(170, 100, 5, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+/* --------------------------------------------------------------------------
+   ROBOT PUCKS & ANIMATIONS
+   -------------------------------------------------------------------------- */
+
+.robot-puck {
+  position: absolute;
+  border-radius: 50%;
+  background: #FAF8F5;
+  box-shadow: 0 8px 18px rgba(35, 32, 26, 0.22),
+              inset 2px 2px 4px rgba(255, 255, 255, 1),
+              inset -2px -2px 5px rgba(175, 165, 150, 0.45);
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.robot-puck.selected {
+  outline: 2.5px solid #23201A;
+  outline-offset: 3px;
+}
+
+/* Pulsing Amber Yield Ring (Collision Halos) */
+@keyframes clayYieldPulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.85;
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6);
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.4;
+    box-shadow: 0 0 0 14px rgba(245, 158, 11, 0);
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+    box-shadow: 0 0 0 24px rgba(245, 158, 11, 0);
+  }
+}
+
+.yield-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2.5px solid #F59E0B;
+  background: rgba(245, 158, 11, 0.15);
+  animation: clayYieldPulse 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+  pointer-events: none;
+}
+
+/* Trajectory Dashed Path Animation */
+@keyframes dashTravel {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.trajectory-path {
+  stroke-dasharray: 6 6;
+  animation: dashTravel 1s linear infinite;
+}
+
+/* --------------------------------------------------------------------------
+   TACTILE INPUT SLIDERS & CONTROLS
+   -------------------------------------------------------------------------- */
+
+input[type="range"].clay-slider {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 9999px;
+  background: #E6E1D6;
+  outline: none;
+  box-shadow: inset 1px 1px 3px rgba(35, 32, 26, 0.15),
+              inset -1px -1px 2px rgba(255, 255, 255, 0.7);
+}
+
+input[type="range"].clay-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #FAF8F5;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 2px 3px 6px rgba(35, 32, 26, 0.18),
+              inset 1.5px 1.5px 3px rgba(255, 255, 255, 0.95),
+              inset -1.5px -1.5px 3px rgba(185, 176, 162, 0.4);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+input[type="range"].clay-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+input[type="range"].clay-slider::-webkit-slider-thumb:active {
+  transform: scale(0.95);
+  background: #EDE8DF;
+}
+
+/* Custom Minimal Scrollbar for Order Queue */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(185, 176, 162, 0.4);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(185, 176, 162, 0.7);
 }

@@ -5,3 +5,16 @@ services:
     volumes:
       - .:/app
     command: sh -c "echo 'RoboWare container is ready.' && tail -f /dev/null"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    command: npm run dev -- --host 0.0.0.0
