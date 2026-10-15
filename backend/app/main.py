@@ -1,4 +1,4 @@
-"""RoboWare API: layouts, models, training jobs, automated sessions and comparisons."""
+﻿"""RoboWare API: layouts, models, training jobs, automated sessions and comparisons."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from .api import layouts, models, training
+from .api import compare, layouts, models, sessions, training
 from .errors import Conflict, Forbidden, NotFound
 from .services import Services
 from .simulation.grid import LayoutError
@@ -32,7 +32,7 @@ def create_app(data_dir: Path | str | None = None) -> FastAPI:
     def health():
         return {"status": "ok", "message": "RoboWare backend is connected"}
 
-    for router in (layouts.router, models.router, training.router):
+    for router in (layouts.router, models.router, training.router, sessions.router, compare.router):
         app.include_router(router, prefix="/api")
 
     @app.exception_handler(NotFound)
