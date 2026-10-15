@@ -151,6 +151,18 @@ def test_head_on_robots_in_one_wide_aisle_get_past_each_other():
     assert run_until(sim, lambda: r1.pos == (6, 4) and r2.pos == (6, 0), 80)
 
 
+def test_robot_blocking_a_shared_target_in_a_one_wide_aisle_is_not_deadlocked():
+    # Seen in the acceptance run: R1 sits on the face (6,7) and wants out upward, while R2 above it
+    # and R3 below it both want (6,7). Nobody may wait forever.
+    sim = make(robots=3)
+    r1, r2, r3 = sim.robots
+    r1.pos, r2.pos, r3.pos = (6, 7), (6, 6), (6, 8)
+    sim._go(r1, "parking", (6, 3))
+    sim._go(r2, "parking", (6, 7))
+    sim._go(r3, "parking", (6, 7))
+    assert run_until(sim, lambda: r1.pos == (6, 3), 120)
+
+
 def test_stop_after_ticks_and_after_orders():
     sim = make(ticks=50)
     for _ in range(60):

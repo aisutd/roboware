@@ -255,7 +255,10 @@ class Simulator:
             return None
         if r.status == "queued_pack":
             r.status = "to_pack"
-        if r.wait_ticks > MAX_WAIT:
+        # Stagger the patience by robot so two blocked robots never back off in the same tick
+        # (that livelocks): the lowest-priority robot gives way first, the other holds its ground.
+        patience = MAX_WAIT + 2 * (len(self.robots) - 1 - self.robots.index(r))
+        if r.wait_ticks > patience:
             r.wait_ticks = 0
             return self._detour(r, positions)
         if len(r.detour) > 1 and r.detour[0] == r.pos:
@@ -309,9 +312,13 @@ class Simulator:
         return r.path[1] if len(r.path) > 1 else None
 
     def _detour(self, r: Robot, positions: dict[str, Cell]) -> Cell | None:
-        """After waiting too long: route around the other robots, or sidestep if fully boxed in."""
+        """After waiting too long: route around the other robots, or sidestep if fully boxed in.
+
+        A target occupied by another robot counts as blocked too, so the waiting robot backs off
+        instead of pushing into it forever (that deadlocks one-wide aisles).
+        """
         others = {pos for rid, pos in positions.items() if rid != r.id}
-        path = find_path(self.layout, r.pos, r.target, frozenset(others - {r.target}))
+        path = find_path(self.layout, r.pos, r.target, frozenset(others))
         r.path = []
         if path and len(path) > 1:
             r.detour = path
