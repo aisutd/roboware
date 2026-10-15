@@ -1,16 +1,42 @@
-# React + Vite
+# RoboWare Frontend — Module 1: Tactile Spatial Map UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Module 1 implements the full-bleed tactile cartographic spatial map and interactive frontend for autonomous warehouse robot fleets.
 
-Currently, two official plugins are available:
+## Features
+- **Tactile Cartography & Claymorphism**: Warm Alabaster Concrete canvas (`#F4F1EA`), ceramic HUD surfaces (`.clay-card`), and squishy depressible buttons (`.clay-btn`).
+- **3D Miniature Floorplan**: Recessed aisles, raised sandstone storage racks, orange picking bays, cobalt packing stations, sage emerald delivery goal `(14, 8)`, and amber charging docks at `x = 0`.
+- **Autonomous Multi-Robot Fleet (R1–R4)**:
+  - 2D Q-learning reinforcement learning engine with exact Bellman updates ($Q(s, a) \leftarrow Q(s, a) + \alpha [r + \gamma \max Q(s') - Q(s, a)]$).
+  - 2D Manhattan A* pathfinding around storage racks.
+  - Priority collision avoidance with 1-tick pulsing amber yield halos.
+  - Dynamic battery drainage (0.8% per movement step) and auto-docking (< 20% battery) to chargers.
+  - Fast Train (+100 Episodes) batch convergence.
+- **Cartographic Overlays**: Animated dashed A* trajectory paths, pulsing yield rings, and toggleable Q-value heatmap with directional policy arrows (`↑`, `→`, `↓`, `←`).
+- **Interactive Controls**:
+  - `TopMapHud`: Tick/Episode counters, routing mode switcher (`Hybrid A* + Q-Learn`, `Q-Learning Only`, `Pure A*`), layer toggles.
+  - `PlaybackDock`: Play/Pause, Step (+1 Tick), Fast Train (+100 Episodes), Reset, Speed multipliers (`1x`, `2x`, `5x`, `10x`).
+  - `MapPaintToolbar`: Layout tile painter (Rack, Pick, Pack, Goal, Charger, Erase).
+  - `OrderDemandDrawer`: Real-time KPI pills, live demand queue, manual order injection, auto-demand wave toggle.
+  - `AgentBrainInspector`: Real-time robot inspector, 4-Way Q-Score Compass Pad, interactive Bellman hyperparameter sliders, model JSON export/import.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Getting Started
 
-## React Compiler
+### Local Development
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The application runs at `http://localhost:5173/`. Proxies API calls under `/api` to the backend on `http://127.0.0.1:8080`.
 
-## Expanding the ESLint configuration
+### Production Build
+```bash
+npm run build
+npm run preview
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### Docker
+```bash
+docker compose up -d
+```
