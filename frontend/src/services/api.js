@@ -26,7 +26,7 @@ async function request(method, path, body) {
   });
   if (res.status === 204) return null;
   const text = await res.text();
-  let data = null;
+  let data;
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
