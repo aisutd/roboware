@@ -1,4 +1,4 @@
-# RoboWare: Agent Training & Automated Warehouse Sessions — Design
+﻿# RoboWare: Agent Training & Automated Warehouse Sessions â€” Design
 
 **Date:** 2026-10-14
 **Status:** Draft, awaiting review
@@ -14,7 +14,7 @@ Turn RoboWare from a single-page browser demo into the final project. In the fin
 
 **Success criteria:**
 - A user can train a model, save it, start a session with it, and see it deliver orders autonomously.
-- On a seeded comparison, a trained model in Q-only mode delivers more orders and has far fewer fallbacks than an untrained model.
+- On a seeded comparison, a fully trained model in Q-only mode has far fewer fallbacks (under 10% of legs) than an undertrained one (300 episodes per destination). An untrained model has no tables, so in Q-only mode every leg falls back to A*.
 - A session's throughput is within roughly 15% of Pure A\* on the default layout.
 - Everything runs locally with one command per service, or with `docker compose up`.
 
@@ -26,7 +26,7 @@ Turn RoboWare from a single-page browser demo into the final project. In the fin
 |---|---|
 | Where it runs | **Python backend** (FastAPI). The browser is a control panel and viewer. |
 | What is learned | **Navigation per destination**: one tabular Q-table per destination cell, using the notebook's Q-learning rule. |
-| Warehouse detail | **Multi-item orders** (1–3 products), stock counts, packing stations, shipping docks, no restocking. |
+| Warehouse detail | **Multi-item orders** (1â€“3 products), stock counts, packing stations, shipping docks, no restocking. |
 | Live updates | The server streams state to the browser over a **WebSocket**. Training runs in a background worker. Storage is model JSON files plus a **SQLite** database. |
 | Dispatcher | Rule-based and the same for every model, so comparisons stay fair. |
 | Repo | Work on a local branch and commit locally. **Never push.** |
@@ -34,7 +34,7 @@ Turn RoboWare from a single-page browser demo into the final project. In the fin
 ## 3. Domain model
 
 ### 3.1 Layout (grid)
-- The default is 16×10 and reproduces today's default layout: racks in three bays, packing stations at (14,2) and (14,5), a shipping dock at (14,8), and chargers at (0,2) and (0,7).
+- The default is 16Ã—10 and reproduces today's default layout: racks in three bays, packing stations at (14,2) and (14,5), a shipping dock at (14,8), and chargers at (0,2) and (0,7).
 - Cell types: `aisle`, `rack` (blocks movement), `packing`, `dock`, `charger`.
   - Packing, dock and charger cells can be driven on.
 - **Pick faces** are derived automatically: every aisle cell directly next to a rack.
@@ -44,35 +44,35 @@ Turn RoboWare from a single-page browser demo into the final project. In the fin
 - **Validation:** every destination must be reachable from every charger, checked with a flood fill. A layout that fails can't be saved and the API returns an error listing the unreachable cells.
 
 ### 3.2 Products and inventory
-- The default layout comes with 24 products (`SKU-001`…`SKU-024`, with readable names), spread across the pick faces, each with 20–40 units in stock.
+- The default layout comes with 24 products (`SKU-001`â€¦`SKU-024`, with readable names), spread across the pick faces, each with 20â€“40 units in stock.
 - Picking reduces stock. An order that needs a product with zero stock becomes `failed` when it's dispatched. Nothing is restocked.
 
 ### 3.3 Order
-- **Fields:** `id`, `items: [{sku, qty}]` (1–3 distinct SKUs, qty 1–2), `priority` (`normal` | `rush`), `created_tick`, `status`, `robot_id`, a timeline that records the tick of each state change, and `package_id`.
-- **Lifecycle:** `queued → assigned → picking → packing → shipping → delivered`, or `failed`.
+- **Fields:** `id`, `items: [{sku, qty}]` (1â€“3 distinct SKUs, qty 1â€“2), `priority` (`normal` | `rush`), `created_tick`, `status`, `robot_id`, a timeline that records the tick of each state change, and `package_id`.
+- **Lifecycle:** `queued â†’ assigned â†’ picking â†’ packing â†’ shipping â†’ delivered`, or `failed`.
 
 ### 3.4 Package
 - Created when packing finishes.
 - **Fields:** `id`, `order_id`, `station`, `packed_tick`, `delivered_tick`.
 
 ### 3.5 Robot
-- **Fields:** `id`, `pos`, `battery` (0–100), `status`, `task`, `carrying`, `wait_ticks`, `visit_counts`, and per-robot stats.
-- **`status`** is one of `idle`, `to_pick`, `picking`, `to_pack`, `queued_pack`, `packing`, `to_dock`, `to_charger`, `charging`, or `yielding`.
+- **Fields:** `id`, `pos`, `battery` (0â€“100), `status`, `task`, `carrying`, `wait_ticks`, `visit_counts`, and per-robot stats.
+- **`status`** is one of `idle`, `to_pick`, `picking`, `to_pack`, `queued_pack`, `packing`, `to_dock`, `to_charger`, `charging`, or `parking` (moving off a station, dock or charger cell when idle). A separate `yielding` flag marks a robot that waited this tick.
 - **`task`** holds the order, its remaining pick stops, and the current target.
 - **`carrying`** is either a list of picked items or a package.
 - **`visit_counts`** tracks visits per cell on the current leg, for loop detection.
-- A session has 1–8 robots (4 by default). Robots start at the chargers and nearby aisle cells.
+- A session has 1â€“8 robots (4 by default). Robots start at the chargers and nearby aisle cells.
 
 ### 3.6 Model
 - **Metadata:** `id`, `name`, `layout_id`, `layout_fingerprint`, `created_at`, `updated_at`, `version`, and `parent_model_id`, which is set when a session saves a model that kept learning as a new version.
 - **Hyperparameters:**
-  - `learning_rate` α = 0.1
-  - `discount_factor` γ = 0.95
-  - `exploration_rate` ε = 0.3
-  - `epsilon_decay`: off by default; when on, ε decays linearly to `epsilon_min` = 0.05
-  - `step_reward` = −1
+  - `learning_rate` Î± = 0.1
+  - `discount_factor` Î³ = 0.95
+  - `exploration_rate` Îµ = 0.3
+  - `epsilon_decay`: off by default; when on, Îµ decays linearly to `epsilon_min` = 0.05
+  - `step_reward` = âˆ’1
   - `goal_reward` = 10
-  - `episodes_per_destination` = 300
+  - `episodes_per_destination` = 3000 (calibration: 300 episodes reach the goal from ~55% of cells, 3000 from 98–100%, ~0.1 s per destination)
   - `max_steps` = 200
 - **Q-tables:** a mapping from destination (`"x,y"`) to a `[W*H][4]` array of floats. The state index is `y*W + x` and the actions are `[up, down, left, right]`, matching the current JS engine.
 - **Training history:** for each destination, the reward and step count of every episode. These are downsampled to at most 300 points per destination when stored.
@@ -126,7 +126,7 @@ The simulator is deterministic: it takes `(state, rng)` and returns the new stat
 7. **Stop check.** The session ends when its stop condition is met.
 
 ### 4.2 Destinations
-A model's destinations are every pick face, packing station, dock, and charger in its layout. The default layout has about 30.
+A model's destinations are every pick face that holds at least one product, plus every packing station, dock, and charger in its layout. The default layout has 29: 24 stocked faces, 2 packing stations, 1 dock and 2 chargers.
 
 ### 4.3 Routing modes
 - **astar:** a Manhattan A\* over cells that can be driven on, ignoring other robots (they're handled by collision resolution).
@@ -141,10 +141,10 @@ A model's destinations are every pick face, packing station, dock, and charger i
 ### 4.4 Training (`q_learning.py`)
 - For each selected destination, run `episodes_per_destination` episodes.
 - Each episode starts at a random aisle cell that can be driven on (not the destination) and ends at the destination or after `max_steps` steps.
-- The action is chosen ε-greedily. Taking it gives a step reward of −1, or the goal reward of 10 for reaching the destination. Bumping into a wall or rack keeps the robot in place and costs −1.
+- The action is chosen Îµ-greedily. Taking it gives a step reward of âˆ’1, or the goal reward of 10 for reaching the destination. Bumping into a wall or rack keeps the robot in place and costs âˆ’1.
 - The update rule is the notebook's exactly:
-  - `target = r` if finished, else `r + γ·max Q(s')`
-  - `Q += α(target − Q)`
+  - `target = r` if finished, else `r + Î³Â·max Q(s')`
+  - `Q += Î±(target âˆ’ Q)`
 - Training uses NumPy arrays and a seeded RNG, and reports progress after each destination.
 - **Online learning:** when it's on in a session, each Q-routed step also applies the update to the live model copy. Steps routed by A\* don't. At the end of the session the user can save the copy as a new model version.
 
@@ -186,8 +186,8 @@ The existing empty files are filled in, and `init.py` is renamed to `__init__.py
 `backend/data/` is added to `.gitignore`.
 
 ### 5.2 Session speed
-- At 1× the session advances 1 tick every 600 ms, matching the current UI.
-- The speeds are 1×, 2×, 5×, 10×, and **max**. Max runs as fast as possible and yields to the event loop every 50 ticks.
+- At 1Ã— the session advances 1 tick every 600 ms, matching the current UI.
+- The speeds are 1Ã—, 2Ã—, 5Ã—, 10Ã—, and **max**. Max runs as fast as possible and yields to the event loop every 50 ticks.
 - WebSocket frames are capped at 20 per second. At high speeds intermediate ticks are skipped, but event logs are batched so nothing is lost.
 
 ### 5.3 API (all under `/api`)
@@ -252,7 +252,7 @@ The existing visual design and components are kept and wired to the backend. `si
    - Has Save and Save-as, plus validation feedback.
 4. **History & Compare**
    - A table of past sessions with their summaries. Clicking one opens its metric charts.
-   - A **Compare** form chooses a layout, workload, and 2–6 model and mode runs. It shows grouped bars (throughput, p95 cycle time, fallbacks, waits) and throughput-over-time lines.
+   - A **Compare** form chooses a layout, workload, and 2â€“6 model and mode runs. It shows grouped bars (throughput, p95 cycle time, fallbacks, waits) and throughput-over-time lines.
 
 **Fixes included:** clearing the 25 lint errors, removing leftover Vite template assets, and adding `ws: true` to the Vite proxy for `/api`.
 
@@ -297,8 +297,8 @@ The existing visual design and components are kept and wired to the backend. `si
   - the WebSocket stream sends a snapshot and then frames
   - 409 on invalid control actions
   - compare returns one summary per run
-- **Acceptance test (`test_acceptance.py`, marked `slow`):** on the default layout, seed 42, 4 robots, 2,000 ticks:
-  - a trained model in Q-only mode delivers at least 2× the orders of an untrained Q-only model
+- **Acceptance test (`test_acceptance.py`, marked `slow`):** on the default layout, seed 42, 4 robots, 2,000 ticks, a saturating arrival rate of 20 orders per 100 ticks:
+  - a trained model in Q-only mode delivers at least 2Ã— the orders of an untrained Q-only model
   - its fallbacks are under 10% of legs
   - its throughput is within 15% of Pure A\*
 
@@ -308,7 +308,7 @@ The existing visual design and components are kept and wired to the backend. `si
 
 **End to end:** a manual smoke run driven in a real browser.
 1. Create a model and train it.
-2. Start a session at 10× and watch orders get delivered.
+2. Start a session at 10Ã— and watch orders get delivered.
 3. Inject a rush order.
 4. Pause, resume, then stop.
 5. Run a comparison of untrained vs trained vs A\*.
