@@ -1,4 +1,4 @@
-﻿"""RoboWare API: layouts, models, training jobs, automated sessions and comparisons."""
+"""RoboWare API: layouts, models, training jobs, automated sessions and comparisons."""
 
 from __future__ import annotations
 

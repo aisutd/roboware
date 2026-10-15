@@ -1,4 +1,4 @@
-﻿"""Process-wide service objects, created once in the app lifespan."""
+"""Process-wide service objects, created once in the app lifespan."""
 
 from __future__ import annotations
 

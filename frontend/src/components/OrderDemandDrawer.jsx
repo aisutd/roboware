@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { coordToLabel } from '../services/simulationEngine';
 
 export const OrderDemandDrawer = ({

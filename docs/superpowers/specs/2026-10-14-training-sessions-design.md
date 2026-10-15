@@ -1,4 +1,4 @@
-﻿# RoboWare: Agent Training & Automated Warehouse Sessions â€” Design
+# RoboWare: Agent Training & Automated Warehouse Sessions â€” Design
 
 **Date:** 2026-10-14
 **Status:** Draft, awaiting review

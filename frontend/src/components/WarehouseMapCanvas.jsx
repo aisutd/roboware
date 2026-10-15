@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { COL_LETTERS, ROW_NUMBERS, coordToLabel, GRID_COLS, GRID_ROWS } from '../services/simulationEngine';
 
 export const WarehouseMapCanvas = ({

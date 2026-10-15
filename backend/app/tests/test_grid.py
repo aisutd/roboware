@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 
 from app.simulation.grid import (
     CHARGER,
