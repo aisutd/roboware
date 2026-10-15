@@ -122,3 +122,78 @@ class OrderSettings:
     def from_dict(cls, data: dict | None) -> "OrderSettings":
         known = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in (data or {}).items() if k in known})
+
+
+ROUTING_MODES = ("hybrid", "q_only", "astar")
+ROBOT_STATUSES = ("idle", "parking", "to_pick", "picking", "to_pack", "queued_pack", "packing",
+                  "to_dock", "to_charger", "charging")
+ROBOT_COLORS = ["#FF5A26", "#2563EB", "#10B981", "#9333EA", "#E11D48", "#0891B2", "#CA8A04", "#4B5563"]
+
+
+@dataclass
+class Task:
+    order_id: str
+    picks: list[tuple[Cell, list[OrderItem]]]  # remaining pick stops: (face, items there)
+    station: Cell | None = None
+    dock: Cell | None = None
+
+
+@dataclass
+class Robot:
+    id: str
+    pos: Cell
+    color: str
+    battery: float = 100.0
+    status: str = "idle"
+    yielding: bool = False
+    task: Task | None = None
+    target: Cell | None = None
+    carrying: list[OrderItem] = field(default_factory=list)
+    package_id: str | None = None
+    work_ticks: int = 0
+    wait_ticks: int = 0
+    charge_after_task: bool = False
+    heading: int = 0
+    path: list[Cell] = field(default_factory=list)  # cached A* path, starting at pos
+    detour: list[Cell] = field(default_factory=list)  # path around blocking robots, starting at pos
+    visit_counts: dict[Cell, int] = field(default_factory=dict)
+    fallback_leg: bool = False
+    leg_steps: int = 0
+    leg_optimal: int = 0
+    q_step: tuple[int, int] | None = None  # (state, action) chosen by the Q-table this tick
+
+
+@dataclass
+class StopCondition:
+    type: str = "ticks"  # "ticks" | "orders" | "manual"
+    value: int | None = 2000
+
+
+@dataclass
+class SessionConfig:
+    layout_id: str = "default"
+    model_id: str | None = None
+    routing_mode: str = "hybrid"
+    hybrid_margin: float = 0.5
+    robot_count: int = 4
+    orders: OrderSettings = field(default_factory=OrderSettings)
+    stop: StopCondition = field(default_factory=StopCondition)
+    online_learning: bool = False
+    metrics_every: int = 10
+    name: str = ""
+
+    def __post_init__(self) -> None:
+        if self.routing_mode not in ROUTING_MODES:
+            raise ValueError(f"Unknown routing mode: {self.routing_mode}")
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "SessionConfig":
+        known = {f.name for f in fields(cls)}
+        values = {k: v for k, v in (data or {}).items() if k in known}
+        values["orders"] = OrderSettings.from_dict(values.get("orders"))
+        stop = values.get("stop") or {}
+        values["stop"] = StopCondition(stop.get("type", "ticks"), stop.get("value", 2000))
+        return cls(**values)
