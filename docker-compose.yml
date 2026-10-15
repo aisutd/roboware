@@ -1,10 +1,12 @@
 services:
-  app:
-    image: alpine:3.20
+  backend:
+    image: python:3.13-slim
     working_dir: /app
     volumes:
-      - .:/app
-    command: sh -c "echo 'RoboWare container is ready.' && tail -f /dev/null"
+      - ./backend:/app
+    ports:
+      - "8080:8080"
+    command: sh -c "pip install --no-cache-dir -r requirements.txt && uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload"
 
   frontend:
     build:
@@ -17,4 +19,7 @@ services:
       - /app/node_modules
     environment:
       - CHOKIDAR_USEPOLLING=true
+      - VITE_API_TARGET=http://backend:8080
+    depends_on:
+      - backend
     command: npm run dev -- --host 0.0.0.0
