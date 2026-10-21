@@ -20,3 +20,5 @@ checkpoints/
 # Operating system files
 .DS_Store
 Thumbs.db
+# Saved models from the training backend
+backend/data/

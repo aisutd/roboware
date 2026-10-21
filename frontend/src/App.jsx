@@ -6,6 +6,7 @@ import { MapPaintToolbar } from './components/MapPaintToolbar';
 import { PlaybackDock } from './components/PlaybackDock';
 import { OrderDemandDrawer } from './components/OrderDemandDrawer';
 import { AgentBrainInspector } from './components/AgentBrainInspector';
+import { TrainingLab } from './components/TrainingLab';
 
 export default function App() {
   const engineRef = useRef(null);
@@ -33,6 +34,8 @@ export default function App() {
   const [selectedRobotId, setSelectedRobotId] = useState('R1');
   const [activeBrush, setActiveBrush] = useState(null);
   const [isTraining, setIsTraining] = useState(false);
+  const [labOpen, setLabOpen] = useState(false);
+  const [loadedModel, setLoadedModel] = useState(null);
 
   // Cartographic layer toggles
   const [layers, setLayers] = useState({
@@ -170,6 +173,21 @@ export default function App() {
     }
   };
 
+  // A model trained and saved on the backend uses the notebook schema, so the engine imports it as-is.
+  const handleLoadBackendModel = (model) => {
+    const res = engine.importModelJSON(model);
+    if (!res.success) {
+      alert(`Model import error: ${res.error}`);
+      return;
+    }
+    engine.setGoal(model.goal);
+    engine.routingMode = 'Q_LEARNING';
+    setLoadedModel({ id: model.id, name: model.name });
+    setLayers((prev) => ({ ...prev, qHeatmap: true })); // show the learned policy arrows
+    syncStateFromEngine();
+    setLabOpen(false);
+  };
+
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
       {/* Centered Miniature Spatial Canvas */}
@@ -231,6 +249,30 @@ export default function App() {
         onChangeHyperparameters={handleChangeHyperparameters}
         onExportModel={handleExportModel}
         onImportModel={handleImportModel}
+      />
+
+      {/* Floating Top-Center Training Lab launcher */}
+      <button
+        className="clay-btn clay-btn-accent"
+        onClick={() => setLabOpen(true)}
+        style={{
+          position: 'absolute',
+          top: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 60,
+          padding: '10px 16px',
+          fontWeight: 800,
+        }}
+      >
+        Training Lab{loadedModel ? ` · ${loadedModel.name}` : ''}
+      </button>
+
+      <TrainingLab
+        open={labOpen}
+        onClose={() => setLabOpen(false)}
+        onLoadModel={handleLoadBackendModel}
+        loadedModelId={loadedModel?.id}
       />
     </div>
   );
