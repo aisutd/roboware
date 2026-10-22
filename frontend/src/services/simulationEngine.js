@@ -11,11 +11,52 @@
  * 4. Dynamic Battery Drain & Charging Traffic Routing
  * 5. Model JSON I/O (exact notebook schema export/import)
  * 6. High-level SimulationEngine class for UI orchestration and reactive subscriptions
+ *
+ * ---------------------------------------------------------------------------
+ * HOW TO READ THIS FILE (a short guide for new readers)
+ * ---------------------------------------------------------------------------
+ * This is the "brain" of the RoboWare front end. It has no React code in it:
+ * it is plain JavaScript that the React components import and call. The UI
+ * only draws whatever this module tells it (robot positions, Q-values, KPIs).
+ *
+ * The warehouse is a grid of 16 columns (x = 0..15, labelled A..P) by 10 rows
+ * (y = 0..9, labelled 1..10). y grows DOWNWARDS, like screen coordinates, so
+ * "up" means y - 1. Some cells are storage racks (walls the robots can't
+ * enter); the rest are aisles. There is one delivery goal cell, two charging
+ * docks on the left wall, picking zones (where items are collected) and
+ * packing stations.
+ *
+ * Two different "movement brains" live here, and it helps to keep them apart:
+ *   - Q-learning (sections 1 and 4): a single learning agent that discovers,
+ *     by trial and error, which direction to move from every cell to reach the
+ *     goal. Its knowledge is the Q-table, which the UI shows as a heatmap and
+ *     arrows. It mirrors the course notebook `base_reference_model.ipynb`.
+ *   - A* pathfinding (section 2): a classic shortest-path search. The live
+ *     fleet of 4 robots (section 3) actually drives with A* so the animation
+ *     is always sensible, even before the Q-table has been trained.
+ *
+ * Sections, in order:
+ *   CONSTANTS            grid size, action list, rewards, default layout
+ *   STATE UTILITIES      converting between (x, y) and a single state number
+ *   1. Q-LEARNING        takeAction (environment), learn (Bellman update),
+ *                        chooseAction (epsilon-greedy), fastTrain (loop)
+ *   2. A* PATHFINDING    findPathAStar
+ *   3. FLEET SIMULATION  createRobotFleet, charging dock choice, collision
+ *                        priority, and stepSimulationTick (one clock tick)
+ *   4. MODEL JSON I/O    save / load the Q-table in the notebook's format
+ *   5. ENGINE CLASS      SimulationEngine: holds all state, wraps the pure
+ *                        functions above, and notifies React subscribers
+ *
+ * Most functions in sections 1-4 are "pure-ish": they take everything they
+ * need as arguments (with defaults), which makes them easy to test on their
+ * own. The class in section 5 is the only place that keeps long-lived state.
  */
 
 // ============================================================================
 // CONSTANTS & CONFIGURATION
 // ============================================================================
+// Everything here is exported so the UI and tests share one source of truth.
+// GRID_COLS / GRID_ROWS are just friendlier aliases for width / height.
 
 export const GRID_WIDTH = 16;
 export const GRID_HEIGHT = 10;
@@ -26,6 +67,15 @@ export const TOTAL_STATES = GRID_WIDTH * GRID_HEIGHT; // 160 states
 export const COL_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'];
 export const ROW_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
+/**
+ * Turns a grid coordinate into a human-friendly, spreadsheet-style label
+ * such as "O9" (column letter + 1-based row number), used in the UI and logs.
+ *
+ * Accepts three call styles so callers don't have to convert first:
+ *   coordToLabel(14, 8), coordToLabel([14, 8]) or coordToLabel({ x: 14, y: 8 }).
+ * If x is outside A..P it falls back to "C<x>" instead of crashing; if y is
+ * missing, only the column letter is returned.
+ */
 export function coordToLabel(x, y) {
   if (Array.isArray(x)) {
     y = x[1];
@@ -43,6 +93,8 @@ export function coordToLabel(x, y) {
 export const ACTIONS = ['up', 'down', 'left', 'right'];
 export const ACTION_NAMES = ACTIONS;
 
+// Lets functions accept an action either by name ('up') or by index (0).
+// Looking either one up returns the numeric index used for the Q-table column.
 export const ACTION_MAP = {
   up: 0,
   down: 1,
@@ -54,6 +106,9 @@ export const ACTION_MAP = {
   3: 3,
 };
 
+// How each action changes the position. The array order MUST match ACTIONS
+// (up, down, left, right) because the action index is used to look it up.
+// Remember y grows downwards, so "up" is dy = -1.
 export const ACTION_DELTAS = [
   { dx: 0, dy: -1 }, // 0: up
   { dx: 0, dy: 1 },  // 1: down
@@ -62,6 +117,15 @@ export const ACTION_DELTAS = [
 ];
 
 // Hyperparameters matching base_reference_model.ipynb contract
+//  - learningRate (alpha): how far each update moves the old Q-value toward
+//    the new estimate. 0.1 = cautious, smooth learning.
+//  - discountFactor (gamma): how much future rewards count compared with an
+//    immediate one. 0.95 means the agent is far-sighted.
+//  - explorationRate (epsilon): chance of trying a random move instead of the
+//    best-known one, so the agent keeps discovering new routes.
+//  - stepReward: -1 on every move that isn't the goal. This small "cost of
+//    time" is what pushes the agent to find SHORT paths, not just any path.
+//  - goalReward: +10 for arriving at the delivery goal.
 export const DEFAULT_HYPERPARAMS = {
   learningRate: 0.1,     // alpha
   discountFactor: 0.95,  // gamma
@@ -71,19 +135,30 @@ export const DEFAULT_HYPERPARAMS = {
 };
 
 // Default warehouse coordinates
+// All coordinates in this file are [x, y] arrays with 0-based indices,
+// e.g. [14, 8] is column O, row 9 in the on-screen labels.
+// DEFAULT_GOAL is the delivery/shipping cell that the Q-learner tries to reach
+// and that robots carry finished orders to.
 export const DEFAULT_GOAL = [14, 8];
+
+// Charging docks sit on the left wall (x = 0), far from the goal on the right,
+// so low-battery robots create real cross-warehouse traffic to manage.
 
 export const DEFAULT_CHARGING_DOCKS = [
   [0, 2],
   [0, 7],
 ];
 
+// Picking zones: where robots collect the item for an order. fastTrain also
+// uses them as common starting points for training episodes.
 export const DEFAULT_PICKING_ZONES = [
   [2, 1],
   [2, 8],
   [13, 1],
 ];
 
+// Packing stations: where an order is boxed before delivery. They are stored
+// on each order and drawn on the grid (see SimulationEngine.orders below).
 export const DEFAULT_PACKING_STATIONS = [
   [14, 2],
   [14, 5],
@@ -91,6 +166,9 @@ export const DEFAULT_PACKING_STATIONS = [
 
 // Default storage rack bays (Raised Sandstone racks)
 // Arranged with aisles at x=0..3, 6, 9, 12..15 and cross-aisles at y=0, 4, 8, 9
+// Each bay is two columns wide and split into an upper block (y = 1..3) and a
+// lower block (y = 5..7), leaving row 4 as a middle cross-aisle. That gives
+// robots several alternative routes, which matters for collision avoidance.
 export const DEFAULT_RACKS = [
   // Bay 1: x = 4, 5
   [4, 1], [4, 2], [4, 3],
@@ -118,6 +196,13 @@ export const DEFAULT_RACKS = [
 /**
  * Maps a 2D coordinate [x, y] or {x, y} to a 1D state index (0..159).
  * Formula: stateIndex = y * width + x
+ *
+ * Why: the Q-table is a plain list of rows, one row per state, so every cell
+ * needs a single number. Reading the grid row by row (like reading a page),
+ * each full row before y contributes `width` cells, then x counts along the
+ * current row. Example: [14, 8] -> 8 * 16 + 14 = 142.
+ * If `pos` is already a number it is assumed to be a state index and is
+ * returned as-is; anything unrecognised safely maps to state 0.
  */
 export function posToState(pos, width = GRID_WIDTH) {
   if (typeof pos === 'number') return pos;
@@ -128,6 +213,9 @@ export function posToState(pos, width = GRID_WIDTH) {
 
 /**
  * Maps a 1D state index (0..159) to a 2D coordinate [x, y].
+ * This is the exact inverse of posToState: the remainder after dividing by
+ * the width is the column (x), and the whole number of full rows is y.
+ * Example: 142 -> [142 % 16, floor(142 / 16)] = [14, 8].
  */
 export function stateToPos(stateIndex, width = GRID_WIDTH) {
   return [stateIndex % width, Math.floor(stateIndex / width)];
@@ -135,6 +223,11 @@ export function stateToPos(stateIndex, width = GRID_WIDTH) {
 
 /**
  * Checks if a coordinate matches any rack in the racks collection.
+ *
+ * Racks can arrive in several shapes depending on who calls this, so it is
+ * deliberately forgiving: a Set of "x,y" strings (fast O(1) lookup), or an
+ * array whose items are [x, y] pairs, {x, y} objects or "x,y" strings.
+ * Returns true if (x, y) is a rack, false otherwise (including no racks).
  */
 export function isRack(x, y, racks = DEFAULT_RACKS) {
   if (!racks) return false;
@@ -154,6 +247,12 @@ export function isRack(x, y, racks = DEFAULT_RACKS) {
 
 /**
  * Creates an empty Q-table (160 states x 4 actions) initialized to 0.0.
+ *
+ * The Q-table is the agent's "memory": qTable[state][action] is its current
+ * estimate of the total future reward for taking `action` in `state`.
+ * Starting at 0 means "no opinion yet" about any move. Each row gets its own
+ * new array (rather than sharing one) so updating one state never changes
+ * another by accident.
  */
 export function createQTable(numStates = TOTAL_STATES, numActions = 4, initialValue = 0.0) {
   const table = new Array(numStates);
@@ -165,6 +264,8 @@ export function createQTable(numStates = TOTAL_STATES, numActions = 4, initialVa
 
 /**
  * Clones a Q-table deeply.
+ * Copies every row, so the clone can be trained without changing the
+ * original (used when the engine is constructed from a supplied table).
  */
 export function cloneQTable(qTable) {
   return qTable.map(row => [...row]);
@@ -173,6 +274,19 @@ export function cloneQTable(qTable) {
 // ============================================================================
 // 1. 2D Q-LEARNING CORE ENGINE
 // ============================================================================
+// Q-learning in one paragraph: the agent stands in a cell (the "state"),
+// picks one of 4 moves (the "action"), and the environment answers with the
+// new cell and a reward. After every move the agent nudges its stored score
+// for that (state, action) pair toward "reward now + best score from where I
+// landed". Repeat over many episodes and good moves near the goal get high
+// scores, which then leak backwards to cells further away, until following
+// the highest score from any cell leads to the goal.
+//
+// The three building blocks below map directly to that loop:
+//   takeAction   = the environment (rules of the world)
+//   chooseAction = the agent deciding what to try
+//   learn        = the agent updating its memory (the Q-table)
+// fastTrain just runs them together many times.
 
 /**
  * Computes next position, reward, and finished status given an action.
@@ -181,6 +295,16 @@ export function cloneQTable(qTable) {
  * - If hitting rack or border, position stays unchanged and receives step reward (-1).
  * - If new position equals goal: reward = 10, finished = true.
  * - Else: reward = -1, finished = false.
+ *
+ * This function is the "environment": it only applies the rules of the world
+ * and never changes the Q-table. It is pure, so the same inputs always give
+ * the same answer.
+ *
+ * Why a bump keeps the robot in place: a real robot can't drive through a
+ * rack or off the floor, so the move simply fails. It still costs -1 like any
+ * other step, which teaches the agent that walking into walls wastes time
+ * without needing a separate "crash" penalty. The episode is NOT ended on a
+ * bump, so the agent gets to try again from the same cell.
  *
  * @param {Array|Object} pos - Current position [x, y]
  * @param {number|string} action - Action index (0..3) or action name ('up', 'down', etc.)
@@ -206,6 +330,8 @@ export function takeAction(
   const currentX = currentPos[0];
   const currentY = currentPos[1];
 
+  // Accept 'up' or 0 alike. An unknown action becomes a "stay still" move
+  // (dx = dy = 0) instead of throwing, so a bad input can't crash the UI.
   const actionIdx = typeof action === 'string' ? ACTION_MAP[action] : action;
   const delta = ACTION_DELTAS[actionIdx] || { dx: 0, dy: 0 };
 
@@ -214,7 +340,7 @@ export function takeAction(
 
   // Boundary check
   const inBounds = newX >= 0 && newX < width && newY >= 0 && newY < height;
-  // Storage rack obstacle check
+  // Storage rack obstacle check (only worth doing if the cell is on the grid)
   const hitObstacle = inBounds && isRack(newX, newY, racks);
 
   if (!inBounds || hitObstacle) {
@@ -226,6 +352,8 @@ export function takeAction(
     };
   }
 
+  // Legal move: the robot really moves. Reaching the goal is the only way an
+  // episode ends with a positive reward.
   const nextPos = [newX, newY];
   const isGoal = nextPos[0] === goal[0] && nextPos[1] === goal[1];
 
@@ -241,6 +369,20 @@ export function takeAction(
  * target = finished ? reward : reward + gamma * max(qTable[nextState]);
  * oldScore = qTable[currentState][action];
  * qTable[currentState][action] = oldScore + alpha * (target - oldScore);
+ *
+ * In plain English:
+ * - `target` is a fresh guess at how good this move was: the reward we just
+ *   got, plus (discounted by gamma) the best score we believe is available
+ *   from the cell we landed in. That second part is how the goal's +10
+ *   gradually spreads backwards through the grid, one cell per update.
+ * - If the move reached the goal (`finished`), there is no future after it,
+ *   so the target is just the reward. Adding future value here would make
+ *   the goal look better than it really is.
+ * - `target - oldScore` is the "surprise" (temporal-difference error). We
+ *   move only a fraction alpha of the way toward the target, so one lucky or
+ *   unlucky step can't overwrite everything learned before.
+ * The table is changed in place (mutated), which is why the UI heatmap
+ * updates as training runs.
  *
  * @param {Array|number} currentPos - Current position [x, y] or state index
  * @param {number|string} action - Action taken
@@ -266,6 +408,9 @@ export function learn(
   const nextIdx = posToState(nextPos);
   const actionIdx = typeof action === 'string' ? ACTION_MAP[action] : action;
 
+  // max over the 4 actions in the next state: we assume the agent will act
+  // greedily from there on. Using the best next action (not the one actually
+  // taken later) is what makes this Q-learning rather than SARSA.
   const nextScores = qTable[nextIdx];
   const bestFutureScore = Math.max(...nextScores);
 
@@ -282,6 +427,18 @@ export function learn(
  * With probability explorationRate: pick uniform random action from [0, 1, 2, 3].
  * Otherwise: argmax over qTable[stateIndex] with random tie-breaking.
  *
+ * Why explore at all: if the agent always picked its current best move it
+ * would get stuck repeating the first route it stumbled on and never find a
+ * shorter one. A 30% chance of a random move keeps it discovering.
+ *
+ * Why random tie-breaking: at the start every score is 0, so all 4 actions
+ * tie. A plain "pick the first maximum" would always return 0 ('up'), and the
+ * agent would just ram the top wall over and over. Choosing randomly among
+ * the tied best actions removes that bias and spreads exploration evenly.
+ *
+ * Note: the random branch can return any of the 4 actions, including one that
+ * hits a rack; takeAction handles that by keeping the agent in place.
+ *
  * @param {Array|number} pos - Position or state index
  * @param {Array<Array<number>>} qTable - Q-table
  * @param {number} explorationRate - Epsilon (default 0.3)
@@ -292,10 +449,12 @@ export function chooseAction(
   qTable,
   explorationRate = DEFAULT_HYPERPARAMS.explorationRate
 ) {
+  // Explore: with probability epsilon, ignore the Q-table entirely.
   if (Math.random() < explorationRate) {
     return Math.floor(Math.random() * 4);
   }
 
+  // Exploit: find the highest score for this cell.
   const stateIdx = posToState(pos);
   const scores = qTable[stateIdx];
 
@@ -306,7 +465,10 @@ export function chooseAction(
     }
   }
 
-  // Collect all actions sharing the maximum score for tie-breaking
+  // Collect all actions sharing the maximum score for tie-breaking.
+  // A tiny tolerance (1e-9) is used instead of === because floating-point
+  // updates can leave values that are equal in theory but differ in the last
+  // decimal places.
   const bestActions = [];
   for (let i = 0; i < scores.length; i++) {
     if (Math.abs(scores[i] - maxScore) < 1e-9) {
@@ -326,6 +488,17 @@ export function chooseAction(
  * Runs `episodes` (default 100) from picking stations / aisle states to goal (14, 8)
  * with maximum 100 steps per episode.
  * Updates the Q-table in place so Q-values visibly converge to the goal.
+ *
+ * One episode = drop the agent on a starting cell, then repeat
+ * choose -> act -> learn until it reaches the goal or runs out of steps.
+ * The step cap (100) stops a confused early agent from wandering forever.
+ * Because the table is shared between calls (pass `options.qTable`), calling
+ * this several times keeps improving the same table rather than starting over.
+ *
+ * Option names actually read from `options`: racks, goal, qTable,
+ * learningRate (alpha), discountFactor (gamma), explorationRate (epsilon) and
+ * maxSteps. Picking zones are always the DEFAULT_PICKING_ZONES, and the grid
+ * size is always the default 16 x 10.
  *
  * @param {number} episodes - Number of training episodes (default 100)
  * @param {Function} [onProgress] - Optional callback ({ episode, totalEpisodes, successRate, qTable })

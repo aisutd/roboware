@@ -1,5 +1,26 @@
 import React from 'react';
 
+/**
+ * PlaybackDock
+ * ------------
+ * The "media player" style control bar centered at the BOTTOM of the screen.
+ * It controls time in the simulation: play/pause, step one tick, fast-train
+ * 100 Q-learning episodes, change speed, and reset the world.
+ *
+ * Like the other HUD panels, it holds no state of its own. Every button just
+ * calls a callback that App.jsx gave it, and App updates the engine + React state.
+ *
+ * Props (all passed from App.jsx):
+ * - isPlaying     : true while App's setInterval loop is auto-stepping the engine.
+ * - onTogglePlay  : flips isPlaying in App (same as pressing the Space bar).
+ * - onStep        : App's handleStep; runs engine.step() once and re-syncs state.
+ * - onFastTrain   : App's handleFastTrain; runs engine.fastTrain100() (100 training episodes, no animation).
+ * - isTraining    : true while that fast-train is running; disables the button and spins its icon.
+ * - onResetWorld  : App's handleResetDefaultLayout; restores default layout, robots and KPIs.
+ * - speed         : current speed multiplier (1, 2, 5 or 10). App uses it to set the tick interval
+ *                   (600ms / speed, never faster than 40ms).
+ * - onChangeSpeed : App's setSpeed setter.
+ */
 export const PlaybackDock = ({
   isPlaying,
   onTogglePlay,
@@ -10,8 +31,10 @@ export const PlaybackDock = ({
   speed,
   onChangeSpeed,
 }) => {
+  // The speed multipliers offered as pill buttons.
   const speeds = [1, 2, 5, 10];
 
+  // Card centered horizontally (left 50% + translateX(-50%)) 20px above the bottom edge.
   return (
     <div
       className="clay-card"
@@ -27,7 +50,8 @@ export const PlaybackDock = ({
         gap: '14px',
       }}
     >
-      {/* Play / Pause Toggle Button */}
+      {/* Play / Pause Toggle Button: shows a PAUSE icon while running and a PLAY
+          icon while stopped. Turns accent-colored while the sim is playing. */}
       <button
         onClick={onTogglePlay}
         className={`clay-btn ${isPlaying ? 'clay-btn-accent' : ''}`}
@@ -57,7 +81,8 @@ export const PlaybackDock = ({
         )}
       </button>
 
-      {/* Step Single Tick */}
+      {/* Step Single Tick: advance exactly one tick. Disabled while playing,
+          because the auto-play loop is already stepping. */}
       <button
         onClick={onStep}
         className="clay-btn"
@@ -75,7 +100,9 @@ export const PlaybackDock = ({
         Step
       </button>
 
-      {/* Fast Train +100 Episodes */}
+      {/* Fast Train +100 Episodes: trains the Q-table offline in one go. App sets
+          isTraining=true, waits 50ms so this "Training..." label can render, then
+          runs the training synchronously and sets isTraining back to false. */}
       <button
         onClick={onFastTrain}
         disabled={isTraining}
@@ -109,7 +136,9 @@ export const PlaybackDock = ({
       {/* Divider */}
       <div style={{ width: '1px', height: '26px', backgroundColor: '#E2DDD3' }} />
 
-      {/* Speed Multiplier Pills */}
+      {/* Speed Multiplier Pills: a segmented control. The pill matching the
+          current `speed` prop gets the raised white style; clicking one sends its
+          value up to App, which restarts the timer loop at the new interval. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#EAE5DC', padding: '3px', borderRadius: '9999px' }}>
         {speeds.map((s) => {
           const isActive = speed === s;
@@ -139,7 +168,8 @@ export const PlaybackDock = ({
       {/* Divider */}
       <div style={{ width: '1px', height: '26px', backgroundColor: '#E2DDD3' }} />
 
-      {/* Reset World */}
+      {/* Reset World: same handler as the toolbar's "Reset Grid" button; restores
+          the default layout and puts the robots and KPIs back to their starting state. */}
       <button
         onClick={onResetWorld}
         className="clay-btn"

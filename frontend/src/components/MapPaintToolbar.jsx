@@ -1,10 +1,34 @@
 import React from 'react';
 
+/**
+ * MapPaintToolbar
+ * ---------------
+ * The "CANVAS TOOLS" pill that floats in the BOTTOM-LEFT corner of the screen.
+ * It lets the user pick a "paint brush" (Rack, Pick, Pack, Goal, Charge, Erase)
+ * and then click tiles on the warehouse map to change what each tile is.
+ *
+ * This component does NOT paint anything itself. It only remembers which brush
+ * is selected (via the parent). The actual painting happens like this:
+ *   1. User clicks a brush here -> onSelectBrush('rack') -> App sets activeBrush.
+ *   2. App passes activeBrush down to WarehouseMapCanvas.
+ *   3. User clicks a tile -> WarehouseMapCanvas calls onPaintCell(x, y, brush)
+ *      -> App calls engine.paintCell(...) and re-syncs React state.
+ *
+ * Props (all passed from App.jsx):
+ * - activeBrush          : id of the selected brush ('rack', 'picking', ...) or null when none is selected.
+ * - onSelectBrush        : setter from App (setActiveBrush). Called with a brush id, or null to deselect.
+ * - onResetDefaultLayout : App's handleResetDefaultLayout; restores the original floor plan via engine.resetWorld().
+ */
 export const MapPaintToolbar = ({
   activeBrush,
   onSelectBrush,
   onResetDefaultLayout,
 }) => {
+  // The list of brushes shown as buttons. Each `id` is the tile type string the
+  // engine understands in paintCell(). `color` matches the tile color on the map
+  // so the swatch previews what you'll paint. Note "Erase" is really the 'aisle'
+  // brush: painting an aisle removes any rack/charger/pick/pack on that tile.
+  // (The single Goal tile can't be erased, only moved by painting Goal elsewhere.)
   const tools = [
     { id: 'rack', label: 'Rack', color: '#DDD6C7', textColor: '#4A4338', icon: '■' },
     { id: 'picking', label: 'Pick', color: '#FF5A26', textColor: '#FFFFFF', icon: '◫' },
@@ -14,6 +38,8 @@ export const MapPaintToolbar = ({
     { id: 'aisle', label: 'Erase', color: '#EFECE4', textColor: '#736B5F', icon: '⌫' },
   ];
 
+  // Outer card: absolutely positioned 20px from the bottom-left of the viewport,
+  // laid out as one horizontal row of controls.
   return (
     <div
       className="clay-card"
@@ -28,6 +54,7 @@ export const MapPaintToolbar = ({
         gap: '8px',
       }}
     >
+      {/* Title: paintbrush icon + "CANVAS TOOLS" label (purely decorative) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '4px' }}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8E8578" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
@@ -42,7 +69,10 @@ export const MapPaintToolbar = ({
 
       <div style={{ width: '1px', height: '22px', backgroundColor: '#E2DDD3' }} />
 
+      {/* One button per brush. Clicking the already-active brush toggles it off
+          (sends null), which returns the map to normal "click to inspect" mode. */}
       {tools.map((tool) => {
+        // Is this the brush currently selected in App? Drives the highlighted style.
         const isActive = activeBrush === tool.id;
         return (
           <button
@@ -58,6 +88,7 @@ export const MapPaintToolbar = ({
             }}
             title={`Select ${tool.label} paint brush (Click grid to apply)`}
           >
+            {/* Small colored swatch with the brush's icon, followed by its text label */}
             <span
               style={{
                 width: '13px',
@@ -82,7 +113,8 @@ export const MapPaintToolbar = ({
 
       <div style={{ width: '1px', height: '22px', backgroundColor: '#E2DDD3' }} />
 
-      {/* Reset Layout Button */}
+      {/* Reset Layout Button: throws away all painted edits and restores the
+          default warehouse layout (also resets the robot fleet and KPIs). */}
       <button
         onClick={onResetDefaultLayout}
         className="clay-btn clay-pill-sm"

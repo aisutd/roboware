@@ -1,5 +1,29 @@
 import React from 'react';
 
+/**
+ * TopMapHud
+ * ---------
+ * The heads-up-display pill in the TOP-LEFT corner of the screen. From left to
+ * right it shows:
+ *   1. The "RoboWare OS" brand badge (decorative).
+ *   2. Live TICK and EPISODE counters read from the engine.
+ *   3. A 3-way switch for the routing algorithm the robots use.
+ *   4. Three toggles for the map overlay layers (Paths, Q-Heatmap, Yield Halos).
+ *
+ * It is a "dumb" component: no state of its own. Clicks call the callbacks
+ * below, App.jsx updates the engine / its own state, and the new values flow
+ * back down as props on the next render.
+ *
+ * Props (all passed from App.jsx):
+ * - tick                : current simulation tick number (engine.tick, re-synced after every step).
+ * - episode             : current training episode number (engine.episode).
+ * - routingMode         : 'HYBRID' | 'Q_LEARNING' | 'A_STAR' - which pathfinding strategy is active.
+ * - onChangeRoutingMode : App's handleChangeRoutingMode; writes engine.routingMode and re-syncs.
+ * - layers              : { paths, qHeatmap, yieldHalos } booleans held in App state.
+ *                         WarehouseMapCanvas reads the same object to decide what to draw.
+ * - onToggleLayer       : App's handleToggleLayer(key); flips one of those booleans.
+ *                         (Keyboard shortcuts P / Q / H in App do the same thing.)
+ */
 export const TopMapHud = ({
   tick,
   episode,
@@ -8,6 +32,7 @@ export const TopMapHud = ({
   layers,
   onToggleLayer,
 }) => {
+  // Card pinned 20px from the top-left of the viewport, laid out as one row.
   return (
     <div
       className="clay-card"
@@ -73,7 +98,8 @@ export const TopMapHud = ({
       {/* Divider */}
       <div style={{ width: '1px', height: '28px', backgroundColor: '#E2DDD3' }} />
 
-      {/* Tick & Episode Counters */}
+      {/* Tick & Episode Counters: zero-padded (e.g. tick 42 -> "00042") with
+          padStart so the width doesn't jump around as the numbers grow. */}
       <div style={{ display: 'flex', gap: '12px' }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <span style={{ fontSize: '9px', fontWeight: 700, color: '#9E9587', letterSpacing: '0.05em' }}>TICK</span>
@@ -92,7 +118,13 @@ export const TopMapHud = ({
       {/* Divider */}
       <div style={{ width: '1px', height: '28px', backgroundColor: '#E2DDD3' }} />
 
-      {/* Routing Mode Switcher */}
+      {/* Routing Mode Switcher: a segmented control with three buttons. Each one
+          compares routingMode to its own value to decide if it looks "selected"
+          (white raised pill) or not (transparent). Clicking sends the mode string
+          up to App, which sets it on the engine so the next tick uses it:
+            HYBRID     - A* pathfinding combined with the learned Q-values
+            Q_LEARNING - pure Q-table, epsilon-greedy (sometimes explores randomly)
+            A_STAR     - classic deterministic shortest path (Manhattan distance) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#EAE5DC', padding: '3px', borderRadius: '9999px' }}>
         <button
           onClick={() => onChangeRoutingMode('HYBRID')}
@@ -146,7 +178,11 @@ export const TopMapHud = ({
       {/* Divider */}
       <div style={{ width: '1px', height: '28px', backgroundColor: '#E2DDD3' }} />
 
-      {/* Layer Toggles */}
+      {/* Layer Toggles: each button flips one key of the `layers` object. The small
+          dot is colored when that layer is on and grey when it is off.
+            paths      - dashed line showing each robot's planned route
+            qHeatmap   - tints tiles by learned Q-value and shows best-action arrows
+            yieldHalos - pulsing ring around a robot that is waiting to avoid a collision */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         <button
           onClick={() => onToggleLayer('paths')}
