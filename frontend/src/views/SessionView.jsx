@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AgentBrainInspector } from '../components/AgentBrainInspector';
+import { Plus } from 'lucide-react';
 import { NewSessionDialog } from '../components/NewSessionDialog';
-import { OrderDemandDrawer } from '../components/OrderDemandDrawer';
-import { PlaybackDock } from '../components/PlaybackDock';
-import { TopMapHud } from '../components/TopMapHud';
+import { OrdersPanel } from '../components/OrdersPanel';
+import { RobotsPanel } from '../components/RobotsPanel';
+import { SessionBar } from '../components/SessionBar';
 import { WarehouseMapCanvas } from '../components/WarehouseMapCanvas';
+import { Window } from '../components/Window';
 import { useToast } from '../components/toastContext';
 import { useSessionStream } from '../hooks/useSessionStream';
 import { cellKey } from '../lib/grid';
 import { api } from '../services/api';
 
 const FLASH_EVENTS = new Set(['delivered', 'picked', 'packed']);
+const STATS = [
+  ['delivered', 'Delivered'], ['throughput_per_100', 'Per 100 ticks'],
+  ['avg_cycle_time', 'Avg order time'], ['wait_events', 'Waits'],
+];
 
 export function SessionView({ sessionId, onSessionChange }) {
   const toast = useToast();
@@ -89,60 +94,65 @@ export function SessionView({ sessionId, onSessionChange }) {
   if (!sessionId || (!state.layout && state.error)) {
     return (
       <div className="empty-state">
-        <h1 className="view-title">{state.error ? 'That session is no longer live' : 'No session running'}</h1>
-        <p style={{ maxWidth: 420, fontSize: 13 }}>
-          Start a session to watch the robots pick, pack and ship orders. Train a model in Models first if you want them to use Q-learning.
-        </p>
-        <button type="button" className="clay-btn clay-btn-accent" onClick={() => setDialogOpen(true)}>New session</button>
+        <h1 className="view-title">{state.error ? 'That session has ended' : 'No session running'}</h1>
+        <p style={{ fontSize: 15 }}>Start one to watch the robots pick, pack and ship orders.</p>
+        <button type="button" className="clay-btn clay-btn-accent" onClick={() => setDialogOpen(true)}><Plus size={14} /> New session</button>
         {dialog}
       </div>
     );
   }
 
+  const stats = state.stats;
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <WarehouseMapCanvas
-        layout={state.layout}
-        robots={state.robots}
-        stations={state.stations}
-        stock={state.stock}
-        selectedRobotId={selected?.id}
-        onSelectRobot={setSelectedRobotId}
-        layers={layers}
-        heatmap={heatmap}
-        heatmapTarget={layers.qHeatmap ? selected?.target : null}
-        flashCells={flashCells}
-        flashToken={state.tick}
-      />
-      <TopMapHud
+    <div className="session">
+      <SessionBar
         session={session}
         connected={state.connected}
         tick={state.tick}
         layers={layers}
         onToggleLayer={toggleLayer}
+        onControl={control}
         onNewSession={() => setDialogOpen(true)}
         onSaveModel={() => run(async () => {
           const saved = await api.saveSessionModel(sessionId);
           toast(`Saved "${saved.name}"`, 'success');
         })}
       />
-      <PlaybackDock
-        status={status}
-        speed={session?.speed ?? 1}
-        onPlay={() => control('play')}
-        onPause={() => control('pause')}
-        onStep={() => control('step')}
-        onStop={() => control('stop')}
-        onSpeed={(s) => control('set_speed', s)}
-      />
-      <OrderDemandDrawer
-        orders={state.orders}
-        stats={state.stats}
-        productNames={productNames}
-        disabled={status === 'finished' || status === 'interrupted'}
-        onInject={(priority) => run(() => api.injectOrder(sessionId, { priority }))}
-      />
-      <AgentBrainInspector robots={state.robots} selectedRobotId={selected?.id} onSelectRobot={setSelectedRobotId} productNames={productNames} />
+      <div className="session-map">
+        <WarehouseMapCanvas
+          layout={state.layout}
+          robots={state.robots}
+          stations={state.stations}
+          stock={state.stock}
+          selectedRobotId={selected?.id}
+          onSelectRobot={setSelectedRobotId}
+          layers={layers}
+          heatmap={heatmap}
+          heatmapTarget={layers.qHeatmap ? selected?.target : null}
+          flashCells={flashCells}
+          flashToken={state.tick}
+        />
+      </div>
+      <aside className="session-side">
+        <Window title="Stats" style={{ flex: 'none' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' }}>
+            {STATS.map(([key, label]) => (
+              <div key={key} style={{ display: 'flex', flexDirection: 'column' }}>
+                <span className="stat-label">{label}</span>
+                <span className="stat-value">{stats?.[key] ?? '–'}</span>
+              </div>
+            ))}
+          </div>
+          {stats?.failed > 0 && <p style={{ color: 'var(--red)', fontWeight: 650, marginTop: 10 }}>{stats.failed} failed</p>}
+        </Window>
+        <RobotsPanel robots={state.robots} selectedRobotId={selected?.id} onSelectRobot={setSelectedRobotId} productNames={productNames} />
+        <OrdersPanel
+          orders={state.orders}
+          productNames={productNames}
+          disabled={status === 'finished' || status === 'interrupted'}
+          onInject={(priority) => run(() => api.injectOrder(sessionId, { priority }))}
+        />
+      </aside>
       {dialog}
     </div>
   );
