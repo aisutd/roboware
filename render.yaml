@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: roboware
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeploy: true
