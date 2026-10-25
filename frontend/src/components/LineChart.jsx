@@ -4,9 +4,10 @@ const PAD = { left: 48, right: 12, top: 10, bottom: 26 };
 const fmt = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Number(v.toFixed(1)));
 
 export function LineChart({ series, height = 180, xLabel = '', yLabel = '' }) {
-  const all = series.flatMap((s) => s.points);
+  const plotted = series.map((s) => ({ ...s, points: s.points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y)) }));
+  const all = plotted.flatMap((s) => s.points);
   if (!all.length) {
-    return <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#8E8578' }}>No data yet</div>;
+    return <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'var(--ink-3)' }}>No data yet</div>;
   }
   const xs = all.map((p) => p.x);
   const ys = all.map((p) => p.y);
@@ -21,21 +22,22 @@ export function LineChart({ series, height = 180, xLabel = '', yLabel = '' }) {
       <svg viewBox={`0 0 ${W} ${height}`} width="100%" role="img" aria-label={`${yLabel} by ${xLabel}`}>
         {yTicks.map((t) => (
           <g key={t}>
-            <line x1={PAD.left} x2={W - PAD.right} y1={sy(t)} y2={sy(t)} stroke="#E6E1D6" />
-            <text x={PAD.left - 6} y={sy(t) + 4} textAnchor="end" fontSize="10" fill="#8E8578" fontFamily="JetBrains Mono">{fmt(t)}</text>
+            <line x1={PAD.left} x2={W - PAD.right} y1={sy(t)} y2={sy(t)} stroke="var(--rule)" />
+            <text x={PAD.left - 6} y={sy(t) + 4} textAnchor="end" fontSize="10" fill="var(--ink-3)" fontFamily="ui-monospace, monospace">{fmt(t)}</text>
           </g>
         ))}
-        <text x={PAD.left} y={height - 6} fontSize="10" fill="#8E8578" fontFamily="JetBrains Mono">{fmt(x0)}</text>
-        <text x={W - PAD.right} y={height - 6} textAnchor="end" fontSize="10" fill="#8E8578" fontFamily="JetBrains Mono">{fmt(x1)}</text>
-        <text x={(W + PAD.left) / 2} y={height - 6} textAnchor="middle" fontSize="10" fill="#8E8578">{xLabel}</text>
-        {series.map((s) => (
-          <polyline key={s.label} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round"
+        <text x={PAD.left} y={height - 6} fontSize="10" fill="var(--ink-3)" fontFamily="ui-monospace, monospace">{fmt(x0)}</text>
+        <text x={W - PAD.right} y={height - 6} textAnchor="end" fontSize="10" fill="var(--ink-3)" fontFamily="ui-monospace, monospace">{fmt(x1)}</text>
+        <text x={(W + PAD.left) / 2} y={height - 6} textAnchor="middle" fontSize="10" fill="var(--ink-3)">{xLabel}</text>
+        {plotted.map((s) => (
+          <g key={s.label}><polyline fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round"
             points={s.points.map((p) => `${sx(p.x)},${sy(p.y)}`).join(' ')} />
+            {s.points.length === 1 && <circle cx={sx(s.points[0].x)} cy={sy(s.points[0].y)} r="3" fill={s.color} />}</g>
         ))}
       </svg>
-      <figcaption style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 11, color: '#6B6357', marginTop: 4 }}>
+      <figcaption style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>
         {yLabel && <span style={{ fontWeight: 700 }}>{yLabel}</span>}
-        {series.map((s) => (
+        {plotted.map((s) => (
           <span key={s.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 10, height: 3, background: s.color, borderRadius: 2 }} />{s.label}
           </span>

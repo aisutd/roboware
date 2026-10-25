@@ -12,7 +12,7 @@ export function OrdersPanel({ orders, productNames, onInject, disabled }) {
   return (
     <Window
       title={`Orders (${active})`}
-      style={{ flex: '1 1 0', minHeight: 160 }}
+      className="operations-orders"
       actions={(
         <>
           <button type="button" className="clay-btn clay-pill-sm" disabled={disabled} onClick={() => onInject('normal')}><Plus size={12} /> Order</button>
@@ -25,7 +25,7 @@ export function OrdersPanel({ orders, productNames, onInject, disabled }) {
       {orders.map((order) => {
         const reached = STAGES.filter((s) => order.timeline?.[s] !== undefined);
         return (
-          <div key={order.id} className="order-row" style={{ opacity: order.status === 'delivered' ? 0.5 : 1 }}>
+          <div key={order.id} className="order-row" data-status={order.status}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <strong>{order.id}</strong>
               {order.priority === 'rush' && <span className="badge badge-rush">Rush</span>}
@@ -36,9 +36,10 @@ export function OrdersPanel({ orders, productNames, onInject, disabled }) {
               {order.items.map((i) => `${i.qty}× ${productNames[i.sku] ?? i.sku}`).join(', ')}
               {order.fail_reason && <span style={{ color: 'var(--red)' }}> ({order.fail_reason.replace('_', ' ')})</span>}
             </div>
-            <div className="stage-track">
+            <div className="stage-track" role="img" aria-label={`Order ${order.id}: ${order.status}. Reached stages: ${reached.join(', ') || 'none'}`}>
               {STAGES.map((s) => <span key={s} title={s} style={reached.includes(s) ? { background: STAGE_COLORS[s] } : undefined} />)}
             </div>
+            <div className="order-stage-labels">{STAGES.map((stage) => <span key={stage} className={order.status === stage ? 'current-stage' : ''}>{stage === 'shipping' ? 'Ship' : stage === 'delivered' ? 'Done' : stage === 'picking' ? 'Pick' : 'Pack'}</span>)}</div>
           </div>
         );
       })}

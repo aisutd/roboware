@@ -1,28 +1,28 @@
+import { BatteryCharging, Grid2X2, Package, Rows3, Truck } from 'lucide-react';
+
 const TOOLS = [
-  { id: 'rack', label: 'Rack', color: '#DDD6C7' },
-  { id: 'packing', label: 'Packing', color: '#2563EB' },
-  { id: 'dock', label: 'Dock', color: '#10B981' },
-  { id: 'charger', label: 'Charger', color: '#F59E0B' },
-  { id: 'aisle', label: 'Erase', color: '#EFECE4' },
+  { id: 'rack', label: 'Storage racks', Icon: Rows3, hint: 'Blocked storage infrastructure. Drag to create continuous rack rows.' },
+  { id: 'aisle', label: 'Walkable aisles', Icon: Grid2X2, hint: 'Clear equipment and restore a walkable floor cell.' },
+  { id: 'packing', label: 'Packing stations', Icon: Package, hint: 'Equipment where picked orders are packed.' },
+  { id: 'charger', label: 'Charging stations', Icon: BatteryCharging, hint: 'Robot charging equipment. Keep routes to destinations open.' },
+  { id: 'dock', label: 'Shipping docks', Icon: Truck, hint: 'Delivery destinations for completed packages.' },
 ];
 
-export function MapPaintToolbar({ activeBrush, onSelectBrush, onReset, disabled }) {
+export function MapPaintToolbar({ activeBrush, onSelectBrush, onReset, disabled, resetLabel = 'Reset to saved' }) {
+  const selected = TOOLS.find((tool) => tool.id === activeBrush);
   return (
-    <div className="clay-card" style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      <span className="view-subtitle" style={{ margin: 0 }}>Paint</span>
-      {TOOLS.map((tool) => (
-        <button key={tool.id} type="button" disabled={disabled}
-          onClick={() => onSelectBrush(activeBrush === tool.id ? null : tool.id)}
-          className={`clay-btn clay-pill-sm ${activeBrush === tool.id ? 'clay-btn-active' : ''}`}
-          style={{ fontSize: 11, gap: 6, border: activeBrush === tool.id ? '1.5px solid #23201A' : undefined }}
-          aria-pressed={activeBrush === tool.id}>
-          <span style={{ width: 12, height: 12, borderRadius: 3, background: tool.color }} />
-          {tool.label}
-        </button>
-      ))}
-      <button type="button" className="clay-btn clay-pill-sm" style={{ fontSize: 11, color: '#8E8578' }} onClick={onReset} disabled={disabled}>
-        Undo all changes
-      </button>
+    <div className="blueprint-tools">
+      <div className="blueprint-tool-list" role="group" aria-label="Warehouse equipment brushes">
+        {TOOLS.map(({ id, label, Icon, hint }) => (
+          <button key={id} type="button" disabled={disabled} title={hint}
+            onClick={() => onSelectBrush(activeBrush === id ? null : id)}
+            className={`clay-btn clay-pill-sm ${activeBrush === id ? 'clay-btn-active' : ''}`} aria-pressed={activeBrush === id}>
+            <Icon size={15} aria-hidden="true" />{label}
+          </button>
+        ))}
+        <button type="button" className="clay-btn clay-pill-sm" onClick={onReset} disabled={disabled}>{resetLabel}</button>
+      </div>
+      <p className="brush-instruction"><strong>{selected ? `Selected: ${selected.label}` : 'Inspect / navigate'}</strong><span>{selected ? `${selected.hint} Click the selected tool again to return to navigation.` : 'Select equipment to paint. With no brush selected, use Pan to navigate the floor.'}</span></p>
     </div>
   );
 }

@@ -25,13 +25,18 @@ function RobotDetail({ robot, productNames }) {
           ))}
         </div>
       )}
-      <div style={{ lineHeight: 1.6, minWidth: 0 }}>
-        <div style={{ color: 'var(--ink)', fontWeight: 650 }}>
-          {coordLabel(robot.x, robot.y)}{robot.target && ` to ${coordLabel(robot.target[0], robot.target[1])}`}
-        </div>
-        <div>{load}</div>
-        <div>{Math.round(robot.battery)}% battery</div>
-        {robot.fallback_leg && <span className="badge badge-warn">A* fallback</span>}
+      <div className="robot-inspector">
+        <div className="eyebrow">{robot.id} / Robot inspector</div>
+        <dl className="telemetry-grid">
+          <dt>Task</dt><dd>{robot.order_id ?? 'No assigned order'}</dd>
+          <dt>Position</dt><dd>{coordLabel(robot.x, robot.y)}</dd>
+          <dt>Destination</dt><dd>{robot.target ? coordLabel(...robot.target) : 'No destination'}</dd>
+          <dt>Battery</dt><dd style={{ color: batteryColor(robot.battery) }}>{Math.round(robot.battery)}%</dd>
+          <dt>Payload</dt><dd>{load}</dd>
+          <dt>Operation</dt><dd>{STATUS_TEXT[robot.status] ?? robot.status}</dd>
+        </dl>
+        {robot.fallback_leg && <span className="badge badge-warn">A* fallback routing</span>}
+        {q && <p className="micro-copy">Q-values by direction. Amber marks the best available action.</p>}
       </div>
     </div>
   );
@@ -40,16 +45,16 @@ function RobotDetail({ robot, productNames }) {
 export function RobotsPanel({ robots, selectedRobotId, onSelectRobot, productNames }) {
   const selected = robots.find((r) => r.id === selectedRobotId) ?? robots[0];
   return (
-    <Window title="Robots" style={{ flex: '0 1 auto' }} bodyStyle={{ padding: 0 }}>
+    <Window title={`Robots (${robots.length})`} className="operations-robots" bodyStyle={{ padding: 0 }}>
+      {robots.length === 0 && <p className="panel muted">Waiting for fleet data…</p>}
       {robots.map((robot) => (
         <div key={robot.id}>
-          <button type="button" className={`robot-row ${robot.id === selected?.id ? 'selected' : ''}`} onClick={() => onSelectRobot(robot.id)}>
+          <button type="button" className={`robot-row ${robot.id === selected?.id ? 'selected' : ''}`} aria-pressed={robot.id === selected?.id} onClick={() => onSelectRobot(robot.id)}>
             <span className="robot-chip" style={{ background: robot.color }} />
-            <strong style={{ width: 24 }}>{robot.id}</strong>
-            <span style={{ flex: 1, color: 'var(--ink-2)' }}>{STATUS_TEXT[robot.status] ?? robot.status}{robot.yielding ? ' (waiting)' : ''}</span>
-            <span className="mini-bar" title={`Battery ${Math.round(robot.battery)}%`}>
-              <div style={{ width: `${robot.battery}%`, background: batteryColor(robot.battery) }} />
+            <span className="fleet-row-main"><span className="fleet-row-title"><strong>{robot.id}</strong><span>{STATUS_TEXT[robot.status] ?? robot.status}{robot.yielding ? ' · Yielding' : ''}</span></span>
+              <span className="fleet-row-context">{coordLabel(robot.x, robot.y)} → {robot.target ? coordLabel(...robot.target) : '—'}{robot.order_id ? ` · ${robot.order_id}` : ''}</span>
             </span>
+            <span className="fleet-battery"><span style={{ color: batteryColor(robot.battery) }}>{Math.round(robot.battery)}%</span><span className="mini-bar" title={`Battery ${Math.round(robot.battery)}%`}><span style={{ display: 'block', height: '100%', width: `${robot.battery}%`, background: batteryColor(robot.battery) }} /></span></span>
           </button>
           {robot.id === selected?.id && <RobotDetail robot={robot} productNames={productNames} />}
         </div>

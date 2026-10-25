@@ -1,6 +1,6 @@
 import { Pause, Play, Plus, SkipForward, Square } from 'lucide-react';
 
-const MODE_LABELS = { hybrid: 'Hybrid A* + Q', q_only: 'Q-learning only', astar: 'Pure A*' };
+import { NAVIGATION_LABELS, NAVIGATION_MODES } from '../lib/navigation';
 const STATUS = {
   running: ['Running', 'badge-live'], paused: ['Paused', 'badge-warn'], created: ['Ready', 'badge-warn'],
   finished: ['Finished', ''], interrupted: ['Stopped', ''],
@@ -17,29 +17,30 @@ export function SessionBar({ session, connected, tick, layers, onToggleLayer, on
   const config = session?.config ?? {};
   const speed = session?.speed ?? 1;
   const running = status === 'running';
-  const over = status === 'finished' || status === 'interrupted';
+  const over = !session || status === 'finished' || status === 'interrupted';
   const [statusLabel, statusClass] = STATUS[status] ?? [status, ''];
 
   return (
-    <header className="clay-card session-bar">
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className="session-name">{session?.name ?? 'Session'}</span>
+    <div className="session-chrome">
+      <header className="session-header">
+        <div className="session-identity">
+          <div className="eyebrow">Operations / Simulation</div>
+          <h1 className="session-name">{session?.name ?? 'Loading session…'}</h1>
+          <div className="session-metadata">
+            <span title={NAVIGATION_MODES.find((mode) => mode.id === config.routing_mode)?.description}>{NAVIGATION_LABELS[config.routing_mode] ?? 'Shortest-path navigation'} <small>({NAVIGATION_MODES.find((mode) => mode.id === config.routing_mode)?.technical ?? 'A*'})</small></span>
+            <span>Model: {session?.model_name ?? 'None'}</span>
+            {config.online_learning && <span className="learning-label">Online learning</span>}
+          </div>
+        </div>
+        <div className="session-health">
+          <span className={`connection-status ${connected ? 'connected' : ''}`}>
+            <span className="operational-dot" />{connected ? 'Simulation connected' : 'Simulation offline'}
+          </span>
           <span className={`badge ${statusClass}`}>{statusLabel}</span>
-          {!connected && <span className="badge badge-rush">Offline</span>}
+          <div className="session-clock"><span className="stat-label" title="One tick is one simulation step, not a real-world second.">Tick</span><span className="font-mono">{String(tick).padStart(5, '0')}</span></div>
         </div>
-        <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-          {MODE_LABELS[config.routing_mode] ?? 'Pure A*'}, {session?.model_name ?? 'no model'}
-          {config.online_learning ? ', learning' : ''}
-        </div>
-      </div>
-
-      <div className="bar-sep" />
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <span className="stat-label">Tick</span>
-        <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1 }}>{String(tick).padStart(5, '0')}</span>
-      </div>
-
+      </header>
+      <div className="session-bar" role="toolbar" aria-label="Simulation controls">
       <div className="bar-group">
         <button type="button" className={`clay-btn ${running ? '' : 'clay-btn-accent'}`} style={{ minWidth: 88 }}
           onClick={() => onControl(running ? 'pause' : 'play')} disabled={over} title="Play / pause (Space)">
@@ -48,9 +49,10 @@ export function SessionBar({ session, connected, tick, layers, onToggleLayer, on
         <button type="button" className="clay-btn" onClick={() => onControl('step')} disabled={running || over} title="Advance one tick">
           <SkipForward size={14} /> Step
         </button>
+        <span className="toolbar-label">Speed</span>
         <div className="seg" role="group" aria-label="Speed">
           {SPEEDS.map((s) => (
-            <button key={s} type="button" className={speed === s ? 'on' : ''} disabled={over} onClick={() => onControl('set_speed', s)}>
+            <button key={s} type="button" className={speed === s ? 'on' : ''} aria-pressed={speed === s} disabled={over} onClick={() => onControl('set_speed', s)}>
               {s === 'max' ? 'Max' : `${s}×`}
             </button>
           ))}
@@ -60,8 +62,8 @@ export function SessionBar({ session, connected, tick, layers, onToggleLayer, on
         </button>
       </div>
 
-      <div style={{ flex: 1 }} />
-
+      <div className="bar-group layer-controls">
+      <span className="toolbar-label">Layers</span>
       <div className="seg" role="group" aria-label="Map layers">
         {LAYERS.map(({ key, label, hint }) => {
           const noModel = key === 'qHeatmap' && !config.model_id;
@@ -73,10 +75,14 @@ export function SessionBar({ session, connected, tick, layers, onToggleLayer, on
           );
         })}
       </div>
+      </div>
+      <div className="bar-group session-actions">
       {config.online_learning && onSaveModel && (
         <button type="button" className="clay-btn" onClick={onSaveModel}>Save learned model</button>
       )}
       <button type="button" className="clay-btn clay-btn-accent" onClick={onNewSession}><Plus size={14} /> New session</button>
-    </header>
+      </div>
+      </div>
+    </div>
   );
 }

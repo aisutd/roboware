@@ -1,4 +1,4 @@
-// A square panel with a pinstriped title bar; actions sit on the right of the bar.
+// Shared panel surface with a title and optional actions on the right.
 export function Window({ title, actions, className = '', bodyClassName = '', style, bodyStyle, as: Tag = 'section', children, ...rest }) {
   return (
     <Tag className={`win ${className}`} style={style} {...rest}>

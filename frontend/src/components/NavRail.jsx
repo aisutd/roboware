@@ -10,7 +10,11 @@ const VIEWS = [
 export function NavRail({ view, onChange }) {
   return (
     <nav className="nav-rail clay-card" aria-label="Main">
-      <div className="nav-brand" title="RoboWare">RW</div>
+      <div className="nav-brand" title="RoboWare">
+        <span className="brand-mark">RW</span>
+        <div className="brand-copy">RoboWare<span>Warehouse operations</span></div>
+      </div>
+      <div className="nav-section-label">Workspace</div>
       {VIEWS.map((item) => {
         const { id, label, Icon } = item;
         return (
@@ -21,6 +25,7 @@ export function NavRail({ view, onChange }) {
           </button>
         );
       })}
+      <div className="nav-footer"><span className="operational-dot" /> Operations workspace</div>
     </nav>
   );
 }

@@ -12,6 +12,7 @@ export const initialSessionState = {
   stats: null,
   events: [],
   recentEvents: [],
+  metricSamples: [],
   error: null,
 };
 
@@ -37,14 +38,18 @@ export function sessionReducer(state, message) {
     case 'disconnected':
       return { ...state, connected: false };
     case 'snapshot':
-      return { ...state, ...pickFrame(message), session: message.session, layout: message.layout, recentEvents: [], error: null };
+      return { ...state, ...pickFrame(message), session: message.session, layout: message.layout, recentEvents: [], metricSamples: message.stats ? [{ ...message.stats, tick: message.tick ?? 0 }] : [], error: null };
     case 'frame': {
       const newest = [...(message.events ?? [])].reverse();
+      const samples = state.metricSamples;
+      const tick = message.tick ?? 0;
+      const sample = message.stats && (!samples.length || tick - samples[samples.length - 1].tick >= 10);
       return {
         ...state,
         ...pickFrame(message),
         session: message.session ?? state.session,
         recentEvents: [...newest, ...state.recentEvents].slice(0, MAX_RECENT_EVENTS),
+        metricSamples: sample ? [...samples, { ...message.stats, tick }].slice(-100) : samples,
       };
     }
     case 'error':
