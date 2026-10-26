@@ -1268,3 +1268,111 @@ input[type="range"].clay-slider:focus-visible { outline: 2px solid var(--tape); 
 .thought-arrow { width: 14px; height: 14px; fill: var(--robot, #f0c06a); filter: drop-shadow(0 0 3px color-mix(in srgb, var(--robot, #f0c06a) 70%, transparent)); }
 .thought-dot-1 { width: 7px; height: 7px; left: calc(50% - 9px); bottom: -10px; }
 .thought-dot-2 { width: 4px; height: 4px; left: calc(50% - 15px); bottom: -15px; }
+
+/* ---- Pixel dialog + "New simulation" setup ---------------------------------------------------- */
+.px-dialog {
+  --px: 'Pixelify Sans', ui-monospace, monospace;
+  width: min(520px, calc(100vw - 32px)); padding: 18px 20px 14px; border-radius: 0; border: 0;
+  background: linear-gradient(180deg, #1f262e, #191f26);
+  clip-path: polygon(0 6px, 6px 6px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 6px, 100% 6px, 100% calc(100% - 6px),
+    calc(100% - 6px) calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 6px), 0 calc(100% - 6px));
+  box-shadow: inset 0 0 0 2px #313b46, inset 0 -4px 0 #0d1116;
+  scrollbar-width: thin;
+}
+.px-dialog[open] { animation: pxDialogIn .32s cubic-bezier(.2, .9, .3, 1.15); }
+.px-dialog[open]::backdrop { animation: pxBackdropIn .25s ease-out; background: rgb(6 9 13 / 70%); backdrop-filter: blur(3px); }
+@keyframes pxDialogIn { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes pxBackdropIn { from { opacity: 0; } }
+.px-dialog .dialog-heading { margin-bottom: 12px; }
+.px-dialog .dialog-heading h2 { font-family: var(--px); font-size: 20px; font-weight: 600; letter-spacing: .03em; color: var(--tape); }
+
+.setup-dialog .simulation-setup { gap: 10px; }
+
+/* Crew: the robots you are about to launch, standing on a strip of floor. */
+.setup-crew {
+  display: flex; align-items: flex-end; justify-content: center; gap: 4px; height: 70px; padding: 0 10px 4px;
+  background: repeating-linear-gradient(90deg, #161b21 0 28px, #1a2027 28px 56px);
+  box-shadow: inset 0 -6px 0 #10151a, inset 0 0 0 2px #262f39;
+}
+.setup-crew-pet { width: 50px; height: 50px; display: block; margin-bottom: -7px; animation: crewIn .45s cubic-bezier(.3, 1.6, .5, 1) both; }
+.setup-crew-pet .robot-pet { width: 100%; height: 100%; display: block; }
+@keyframes crewIn { 0% { opacity: 0; transform: translateY(-22px) scale(.6); } 60% { opacity: 1; transform: translateY(2px) scale(1.06, .94); } 100% { transform: none; } }
+
+.setup-name {
+  width: 100%; border: 0; background: transparent; color: var(--ink); padding: 4px 2px 6px;
+  font-family: var(--px); font-size: 17px; box-shadow: inset 0 -2px 0 #313b46; transition: box-shadow .2s ease;
+}
+.setup-name::placeholder { color: #66727f; }
+.setup-name:focus { outline: none; box-shadow: inset 0 -2px 0 var(--tape); }
+
+.setup-row { display: grid; grid-template-columns: 82px 1fr; align-items: start; gap: 10px; }
+.setup-label { font-family: var(--px); font-size: 13px; color: var(--ink-3); padding-top: 6px; }
+.setup-stack { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+
+/* Segmented pixel choices backed by native radios. */
+.setup-choice { display: flex; flex-wrap: wrap; gap: 4px; }
+.setup-choice-item { position: relative; cursor: pointer; }
+.setup-choice-item input { position: absolute; opacity: 0; pointer-events: none; }
+.setup-choice-face {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 2px;
+  font-family: var(--px); font-size: 13px; color: var(--ink-2); background: #262e37;
+  clip-path: polygon(0 3px, 3px 3px, 3px 0, calc(100% - 3px) 0, calc(100% - 3px) 3px, 100% 3px, 100% calc(100% - 3px),
+    calc(100% - 3px) calc(100% - 3px), calc(100% - 3px) 100%, 3px 100%, 3px calc(100% - 3px), 0 calc(100% - 3px));
+  box-shadow: inset 0 -3px 0 #12171c;
+  transition: background .18s ease, color .18s ease, transform .12s ease, box-shadow .18s ease;
+}
+.setup-choice-item:hover .setup-choice-face { background: #2e3843; color: var(--ink); }
+.setup-choice-item input:checked + .setup-choice-face {
+  background: var(--tape); color: #211a0e; transform: translateY(1px);
+  box-shadow: inset 0 -2px 0 #8c6022, inset 0 2px 0 rgb(255 255 255 / 25%);
+}
+.setup-choice-item input:focus-visible + .setup-choice-face { box-shadow: inset 0 0 0 2px var(--tape), inset 0 -3px 0 #12171c; }
+.setup-choice-tag { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; font-weight: 700; padding: 1px 4px; background: rgb(0 0 0 / 22%); color: inherit; }
+
+.setup-hint { font-size: 11.5px; color: var(--ink-3); line-height: 1.5; animation: hintIn .3s ease; }
+@keyframes hintIn { from { opacity: 0; transform: translateX(-6px); } }
+
+.setup-stepper { display: flex; align-items: center; gap: 8px; }
+.setup-count { min-width: 22px; text-align: center; font-family: var(--px); font-size: 20px; color: var(--ink); }
+
+.setup-select, .setup-input {
+  width: 100%; height: 30px; padding: 0 8px; border: 0; color: var(--ink); background: #141a20;
+  font-family: var(--px); font-size: 13px; box-shadow: inset 0 0 0 2px #2c3540; transition: box-shadow .18s ease;
+}
+.setup-select:focus, .setup-input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--tape); }
+.setup-model { display: flex; flex-direction: column; gap: 6px; animation: hintIn .3s ease; }
+.setup-warn { font-size: 11.5px; color: var(--amber); line-height: 1.5; }
+.setup-link { margin-left: 6px; border: 0; background: none; color: var(--tape); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+
+/* Fine-tune: folds open smoothly where the browser can animate to auto height. */
+.setup-dialog .advanced-options { border: 0; margin: 2px 0 0; interpolate-size: allow-keywords; }
+.setup-dialog .advanced-options summary {
+  list-style: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 0;
+  font-family: var(--px); font-size: 13px; font-weight: 500; color: var(--ink-3); transition: color .15s ease;
+}
+.setup-dialog .advanced-options summary::-webkit-details-marker { display: none; }
+.setup-dialog .advanced-options summary:hover { color: var(--ink); }
+.setup-chevron { width: 9px; height: 9px; fill: currentColor; transition: transform .2s ease; }
+.setup-dialog .advanced-options[open] .setup-chevron { transform: rotate(90deg); }
+.setup-dialog .advanced-options::details-content { block-size: 0; overflow: hidden; transition: block-size .28s ease, content-visibility .28s allow-discrete; }
+.setup-dialog .advanced-options[open]::details-content { block-size: auto; }
+.setup-dialog .advanced-fields { padding: 8px 0 4px; gap: 10px; }
+.setup-dialog .field { font-size: 11px; color: var(--ink-3); gap: 4px; }
+.setup-seed { display: flex; gap: 4px; }
+.setup-dialog .check { font-size: 12px; color: var(--ink-2); }
+
+.setup-dialog .setup-footer { align-items: center; padding-top: 10px; margin-top: 2px; box-shadow: inset 0 2px 0 #262f39; }
+.setup-dialog .setup-summary { flex: 1; min-width: 0; font-family: var(--px); font-size: 12px; color: var(--ink-3); }
+.setup-go { padding: 0 16px 2px; }
+.setup-notice { font-size: 10.5px; color: #6c7884; text-align: right; }
+
+@media (max-width: 480px) {
+  .setup-row { grid-template-columns: 1fr; gap: 4px; }
+  .setup-label { padding-top: 0; }
+  .setup-dialog .setup-footer { flex-wrap: wrap; }
+  .setup-dialog .setup-summary { flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .px-dialog[open], .px-dialog[open]::backdrop, .setup-crew-pet, .setup-hint, .setup-model { animation: none; }
+  .setup-dialog .advanced-options::details-content { transition: none; }
+}

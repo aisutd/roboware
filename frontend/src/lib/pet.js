@@ -25,6 +25,9 @@ export const CHEER_TICKS = 3;
 
 export const isWalking = (robot) => WALKING.has(robot.status) && !robot.yielding;
 
+// Same order as the backend's ROBOT_COLORS, so a preview robot matches the one that appears on the floor.
+export const ROBOT_COLORS = ['#FF5A26', '#2563EB', '#10B981', '#9333EA', '#E11D48', '#0891B2', '#CA8A04', '#4B5563'];
+
 // Robots with nothing to do doze off (faded colour, closed eyes, "zzZ") until they get work.
 export const isSnoozing = (robot) => robot.status === 'idle' && !robot.order_id && !robot.yielding;
 

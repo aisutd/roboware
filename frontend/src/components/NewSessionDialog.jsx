@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { NAVIGATION_MODES, trainingGuidance } from '../lib/navigation';
+import { ROBOT_COLORS } from '../lib/pet';
 import { api } from '../services/api';
 import { Dialog } from './Dialog';
+import { PixelIcon } from './PixelIcon';
+import { RobotPet } from './RobotPet';
 import { useToast } from './toastContext';
 
 const DEFAULTS = {
@@ -9,6 +12,47 @@ const DEFAULTS = {
   rate_per_100: 6, rush_fraction: 0.1, seed: 42, stop_type: 'ticks', stop_value: 2000, online_learning: false,
   size_1: 50, size_2: 30, size_3: 20,
 };
+
+// One-tap presets; Fine-tune holds the exact numbers behind them.
+const TRAFFIC = [
+  { id: 'calm', label: 'Calm', rate: 3, rush: 0.05 },
+  { id: 'steady', label: 'Steady', rate: 6, rush: 0.1 },
+  { id: 'busy', label: 'Busy', rate: 12, rush: 0.2 },
+];
+const LENGTHS = [
+  { id: 'short', label: 'Short', type: 'ticks', value: 1000 },
+  { id: 'standard', label: 'Standard', type: 'ticks', value: 2000 },
+  { id: 'long', label: 'Long', type: 'ticks', value: 5000 },
+  { id: 'endless', label: 'Endless', type: 'manual', value: 2000 },
+];
+const MAX_ROBOTS = ROBOT_COLORS.length;
+
+// A row of pixel radio buttons; the checked one lights up.
+function Choice({ name, options, value, onChange, legend }) {
+  return (
+    <div className="setup-choice" role="radiogroup" aria-label={legend}>
+      {options.map((option) => (
+        <label key={option.id} className="setup-choice-item">
+          <input type="radio" name={name} value={option.id} checked={value === option.id} onChange={() => onChange(option.id)} />
+          <span className="setup-choice-face">{option.tag && <b className="setup-choice-tag">{option.tag}</b>}{option.label}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+// The fleet about to launch, drawn as the pixel pets that will appear on the floor.
+function CrewPreview({ count }) {
+  return (
+    <div className="setup-crew" aria-hidden="true">
+      {ROBOT_COLORS.slice(0, count).map((color, i) => (
+        <span key={color} className="setup-crew-pet">
+          <RobotPet robot={{ id: `R${i + 1}`, color, status: 'idle', order_id: 'preview', battery: 100 }} tick={0} />
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export function NewSessionDialog({ open, onClose, onCreated, initialLayoutId = null, initialModelId = null, initialDraft = null, onTrainRequested }) {
   const toast = useToast();
@@ -34,10 +78,16 @@ export function NewSessionDialog({ open, onClose, onCreated, initialLayoutId = n
 
   if (!open) return null;
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
+  const patch = (values) => setForm({ ...form, ...values });
   const layoutModels = models.filter((m) => m.layout_id === form.layout_id);
   const selectedModel = layoutModels.find((model) => model.id === form.model_id);
   const navigation = NAVIGATION_MODES.find((mode) => mode.id === form.routing_mode);
   const guidance = trainingGuidance(form.routing_mode, selectedModel);
+  const robots = Math.min(MAX_ROBOTS, Math.max(1, Number(form.robot_count) || 1));
+  const traffic = TRAFFIC.find((t) => t.rate === Number(form.rate_per_100) && t.rush === Number(form.rush_fraction));
+  const length = LENGTHS.find((l) => l.type === form.stop_type && (l.type === 'manual' || l.value === Number(form.stop_value)));
+  const learned = form.routing_mode !== 'astar';
+  const stopText = form.stop_type === 'manual' ? 'no time limit' : `${form.stop_value} ${form.stop_type === 'ticks' ? 'steps' : 'deliveries'}`;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -49,7 +99,7 @@ export function NewSessionDialog({ open, onClose, onCreated, initialLayoutId = n
         layout_id: form.layout_id,
         model_id: form.model_id || null,
         routing_mode: form.routing_mode,
-        robot_count: Number(form.robot_count),
+        robot_count: robots,
         orders: {
           rate_per_100: Number(form.rate_per_100),
           rush_fraction: Number(form.rush_fraction),
@@ -70,66 +120,105 @@ export function NewSessionDialog({ open, onClose, onCreated, initialLayoutId = n
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title="Set up a simulation">
+    <Dialog open={open} onClose={onClose} title="New simulation" pixel className="setup-dialog">
       <form onSubmit={submit} className="simulation-setup" onInvalidCapture={(event) => { const details = event.target.closest('details'); if (details) details.open = true; }}>
-        <p className="setup-intro">Choose a warehouse, a virtual robot fleet, and a navigation method. The simulation starts ready for you to press Play.</p>
-        <p className="simulation-notice">Simulation only—these settings do not control real robots.</p>
-        <section className="setup-section" aria-labelledby="setup-warehouse"><h3 id="setup-warehouse">1 · Warehouse and robot fleet</h3>
-          <label className="field">Simulation name (optional)<input className="clay-input" value={form.name} onChange={set('name')} placeholder="We'll name it from your settings" /></label>
-          <div className="field-row">
-            <label className="field">Warehouse
-              <select className="clay-select" value={form.layout_id} onChange={(e) => setForm({ ...form, layout_id: e.target.value, model_id: '' })}>{layouts.map((layout) => <option key={layout.id} value={layout.id}>{layout.name}</option>)}</select>
-              <span className="field-hint">Use the included warehouse, or a layout saved in Blueprint Studio.</span>
-            </label>
-            <label className="field">Simulated robots<input className="clay-input" type="number" min="1" max="8" value={form.robot_count} onChange={set('robot_count')} title="Number of virtual robots sharing the warehouse. Start with 4; supported range is 1–8." /><span className="field-hint">Start with 4. You can choose between 1 and 8.</span></label>
+        <CrewPreview count={robots} />
+        <input className="setup-name" value={form.name} onChange={set('name')} placeholder="Untitled run" aria-label="Simulation name (optional)" maxLength={60} />
+
+        <div className="setup-row">
+          <span className="setup-label">Warehouse</span>
+          <Choice name="layout_id" legend="Warehouse" value={form.layout_id} onChange={(id) => patch({ layout_id: id, model_id: '' })}
+            options={(layouts.length ? layouts : [{ id: form.layout_id, name: 'Default warehouse' }]).map((l) => ({ id: l.id, label: l.name }))} />
+        </div>
+
+        <div className="setup-row">
+          <span className="setup-label">Robots</span>
+          <div className="setup-stepper" role="group" aria-label="Simulated robots">
+            <button type="button" className="px-btn px-small px-icon-btn" onClick={() => patch({ robot_count: robots - 1 })} disabled={robots <= 1} aria-label="One robot fewer"><PixelIcon name="minus" /></button>
+            <output className="setup-count" aria-live="polite">{robots}</output>
+            <button type="button" className="px-btn px-small px-icon-btn" onClick={() => patch({ robot_count: robots + 1 })} disabled={robots >= MAX_ROBOTS} aria-label="One robot more"><PixelIcon name="plus" /></button>
           </div>
-        </section>
-        <section className="setup-section" aria-labelledby="setup-navigation"><h3 id="setup-navigation">2 · Navigation method</h3>
-          <label className="field">How should robots find their way?
-            <select className="clay-select" value={form.routing_mode} onChange={set('routing_mode')}>{NAVIGATION_MODES.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}</select>
-          </label>
-          <div className="navigation-explanation"><span className="eyebrow">{navigation.technical}</span><p>{navigation.description}</p></div>
-          <label className="field">AI model {form.routing_mode === 'astar' ? '(optional; not needed for shortest-path navigation)' : '(for this warehouse)'}
-            <select className="clay-select" value={form.model_id} onChange={set('model_id')}><option value="">No AI model</option>{layoutModels.map((model) => <option key={model.id} value={model.id}>{model.name} · {model.trained_destinations} destinations trained</option>)}</select>
-            <span className="field-hint">A model is a saved set of routes learned by practicing in a virtual warehouse.</span>
-          </label>
-          <div className={`training-guidance ${guidance.needsTraining ? 'training-needed' : ''}`}><p>{guidance.message}</p>{guidance.needsTraining && <div className="bar-group">
-            <button type="button" className="clay-btn clay-pill-sm" onClick={() => setForm({ ...form, routing_mode: 'astar' })}>Use shortest-path instead</button>
-            {onTrainRequested && <button type="button" className="clay-btn clay-pill-sm" onClick={() => onTrainRequested(form.layout_id, form.model_id || null, { ...form })}>Open Training Lab</button>}
-          </div>}</div>
-        </section>
-        <details className="advanced-options"><summary>Advanced simulation options <span>Orders, stopping rules, and learning during a run</span></summary><div className="advanced-fields">
-          <div className="field-row">
-            <label className="field">Orders per 100 ticks<input title="Controls how often work arrives. A tick is one simulation step, not a real-world second." className="clay-input" type="number" min="0" max="100" step="0.5" value={form.rate_per_100} onChange={set('rate_per_100')} /></label>
-            <label className="field">Rush order share (0–1)<input title="0.1 means about 10% of generated orders are marked urgent." className="clay-input" type="number" min="0" max="1" step="0.05" value={form.rush_fraction} onChange={set('rush_fraction')} /></label>
-            <label className="field">Repeatable order pattern (seed)<input title="The same seed recreates the same generated order pattern when other settings are unchanged." className="clay-input" type="number" value={form.seed} onChange={set('seed')} /></label>
-          </div>
-          <div className="field-row">
-            <label className="field">% 1-item orders<input className="clay-input" type="number" min="0" value={form.size_1} onChange={set('size_1')} /></label>
-            <label className="field">% 2-item<input className="clay-input" type="number" min="0" value={form.size_2} onChange={set('size_2')} /></label>
-            <label className="field">% 3-item<input className="clay-input" type="number" min="0" value={form.size_3} onChange={set('size_3')} /></label>
-          </div>
-          <div className="field-row">
-            <label className="field">Stop condition
-              <select className="clay-select" value={form.stop_type} onChange={set('stop_type')}>
-                <option value="ticks">Simulation steps (ticks)</option>
-                <option value="orders">Delivered orders</option>
-                <option value="manual">Manual stop</option>
-              </select>
-            </label>
-            {form.stop_type !== 'manual' && (
-              <label className="field">Stop value<input title="For steps, stop after this many simulation ticks. For orders, stop after this many deliveries." className="clay-input" type="number" min="1" value={form.stop_value} onChange={set('stop_value')} /></label>
+        </div>
+
+        <div className="setup-row">
+          <span className="setup-label">Routing</span>
+          <div className="setup-stack">
+            <Choice name="routing_mode" legend="Navigation method" value={form.routing_mode} onChange={(id) => patch({ routing_mode: id })}
+              options={NAVIGATION_MODES.map((mode) => ({ id: mode.id, label: mode.short, tag: mode.tag }))} />
+            <p className="setup-hint" key={form.routing_mode}>{navigation.blurb}</p>
+            {learned && (
+              <div className={`setup-model ${guidance.needsTraining ? 'needs-training' : ''}`}>
+                <select className="setup-select" value={form.model_id} onChange={set('model_id')} aria-label="AI model">
+                  <option value="">No AI model</option>
+                  {layoutModels.map((model) => <option key={model.id} value={model.id}>{model.name} · {model.trained_destinations} destinations</option>)}
+                </select>
+                {guidance.needsTraining && (
+                  <p className="setup-warn">
+                    {selectedModel ? 'This model has not learned any routes yet.' : 'Pick a trained model, or this run uses shortest path.'}
+                    {onTrainRequested && <button type="button" className="setup-link" onClick={() => onTrainRequested(form.layout_id, form.model_id || null, { ...form })}>Train one</button>}
+                  </p>
+                )}
+              </div>
             )}
           </div>
-          <label className="check">
-            <input type="checkbox" checked={form.online_learning} onChange={set('online_learning')} disabled={!form.model_id} />
-            Keep learning during the session (save as a new model version afterwards)
-          </label>
-          <p className="field-hint">Order-size values are relative weights. With the defaults, about 50% of orders contain one item, 30% two, and 20% three. A simulation tick is a logical step, not a physical time measurement.</p>
-        </div></details>
-        <p className="setup-summary">Current setup: {form.robot_count} virtual robots · {navigation.label} · {form.rate_per_100} orders per 100 ticks · {form.stop_type === 'manual' ? 'stop manually' : `stop after ${form.stop_value} ${form.stop_type === 'ticks' ? 'simulation steps' : 'delivered orders'}`}.</p>
+        </div>
+
+        <div className="setup-row">
+          <span className="setup-label">Orders</span>
+          <Choice name="traffic" legend="Order traffic" value={traffic?.id} options={TRAFFIC}
+            onChange={(id) => { const t = TRAFFIC.find((x) => x.id === id); patch({ rate_per_100: t.rate, rush_fraction: t.rush }); }} />
+        </div>
+
+        <div className="setup-row">
+          <span className="setup-label">Length</span>
+          <Choice name="length" legend="Run length" value={length?.id} options={LENGTHS}
+            onChange={(id) => { const l = LENGTHS.find((x) => x.id === id); patch({ stop_type: l.type, stop_value: l.value }); }} />
+        </div>
+
+        <details className="advanced-options">
+          <summary><PixelIcon name="chevron" className="setup-chevron" /> Fine-tune</summary>
+          <div className="advanced-fields">
+            <div className="field-row">
+              <label className="field">Orders per 100 ticks<input title="How often work arrives. A tick is one simulation step." className="setup-input" type="number" min="0" max="100" step="0.5" value={form.rate_per_100} onChange={set('rate_per_100')} /></label>
+              <label className="field">Rush order share<input title="0.1 means about 10% of orders are urgent." className="setup-input" type="number" min="0" max="1" step="0.05" value={form.rush_fraction} onChange={set('rush_fraction')} /></label>
+              <label className="field">Repeatable order pattern
+                <span className="setup-seed">
+                  <input title="The same seed recreates the same orders." className="setup-input" type="number" value={form.seed} onChange={set('seed')} />
+                  <button type="button" className="px-btn px-small px-icon-btn" title="Roll a new seed" aria-label="Roll a new seed" onClick={() => patch({ seed: Math.floor(Math.random() * 10000) })}><PixelIcon name="dice" /></button>
+                </span>
+              </label>
+            </div>
+            <div className="field-row">
+              <label className="field">% 1-item orders<input className="setup-input" type="number" min="0" value={form.size_1} onChange={set('size_1')} /></label>
+              <label className="field">% 2-item<input className="setup-input" type="number" min="0" value={form.size_2} onChange={set('size_2')} /></label>
+              <label className="field">% 3-item<input className="setup-input" type="number" min="0" value={form.size_3} onChange={set('size_3')} /></label>
+            </div>
+            <div className="field-row">
+              <label className="field">Stop condition
+                <select className="setup-select" value={form.stop_type} onChange={set('stop_type')}>
+                  <option value="ticks">Simulation steps</option>
+                  <option value="orders">Delivered orders</option>
+                  <option value="manual">Manual stop</option>
+                </select>
+              </label>
+              {form.stop_type !== 'manual' && (
+                <label className="field">Stop value<input className="setup-input" type="number" min="1" value={form.stop_value} onChange={set('stop_value')} /></label>
+              )}
+            </div>
+            <label className="check">
+              <input type="checkbox" checked={form.online_learning} onChange={set('online_learning')} disabled={!form.model_id} />
+              Keep learning during the session (saves a new model version)
+            </label>
+          </div>
+        </details>
+
         {error && <div className="inline-error" role="alert">{error}</div>}
-        <div className="setup-footer"><button type="button" className="clay-btn" onClick={onClose}>Cancel</button><button type="submit" className="clay-btn clay-btn-accent" disabled={busy}>{busy ? 'Creating…' : 'Create simulation'}</button></div>
+        <div className="setup-footer">
+          <p className="setup-summary" title="Your setup at a glance">{robots} robots · {navigation.tag} · {(traffic?.label ?? 'Custom').toLowerCase()} orders · {stopText}</p>
+          <button type="button" className="px-btn" onClick={onClose}>Cancel</button>
+          <button type="submit" className="px-btn px-primary setup-go" disabled={busy}><PixelIcon name="play" />{busy ? 'Starting…' : 'Create'}</button>
+        </div>
+        <p className="setup-notice">Simulation only. Nothing here controls real robots.</p>
       </form>
     </Dialog>
   );

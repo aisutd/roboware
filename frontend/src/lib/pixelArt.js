@@ -66,6 +66,9 @@ export const UI_ICONS = {
   chip: pixelPath(['.B.B.B.', 'BBBBBBB', '.B...B.', 'BB.B.BB', '.B...B.', 'BBBBBBB', '.B.B.B.']),
   clock: pixelPath(['.BBBBB.', 'B..B..B', 'B..B..B', 'B..BB.B', 'B.....B', 'B.....B', '.BBBBB.']),
   music: pixelPath(['..BBBBB', '..BBBBB', '..B...B', '..B...B', 'BBB.BBB', 'BBB.BBB', 'BB..BB.']),
+  minus: pixelPath(['.......', '.......', 'BBBBBBB', 'BBBBBBB', 'BBBBBBB', '.......', '.......']),
+  close: pixelPath(['BB...BB', 'BBB.BBB', '.BBBBB.', '..BBB..', '.BBBBB.', 'BBB.BBB', 'BB...BB']),
+  dice: pixelPath(['BBBBBBB', 'B.BBB.B', 'BBBBBBB', 'BBB.BBB', 'BBBBBBB', 'B.BBB.B', 'BBBBBBB']),
   sfx: pixelPath(['...B...', '..BB.B.', 'BBBB..B', 'BBBB..B', 'BBBB..B', '..BB.B.', '...B...']),
 };
 
