@@ -1,5 +1,3 @@
-export const clampZoom = (value) => Math.max(0.5, Math.min(4, value));
-
 // Camera translation changes presentation only; robot/grid coordinates stay intact.
 export function followOffset(robot, geometry, scale, pitch = 60, cell = 56) {
   return {

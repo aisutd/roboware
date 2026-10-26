@@ -23,6 +23,16 @@ describe('sessionReducer', () => {
     expect(state.recentEvents[0].n).toBe(60);
   });
 
+  it('remembers each robot\'s latest pick, pack, delivery or charge for its happy face', () => {
+    let state = sessionReducer(initialSessionState, { ...frame(0), type: 'snapshot', layout: {} });
+    state = sessionReducer(state, frame(5, [{ type: 'picked', robot: 'R1' }, { type: 'order_created', order: 'O1' }]));
+    state = sessionReducer(state, frame(9, [{ type: 'delivered', robot: 'R2' }, { type: 'fallback', robot: 'R1' }]));
+    expect(state.robotCheers).toEqual({ R1: { type: 'picked', tick: 5 }, R2: { type: 'delivered', tick: 9 } });
+    const unchanged = sessionReducer(state, frame(10));
+    expect(unchanged.robotCheers).toBe(state.robotCheers);
+    expect(sessionReducer(state, { ...frame(0), type: 'snapshot', layout: {} }).robotCheers).toEqual({});
+  });
+
   it('tracks connection state and errors', () => {
     let state = sessionReducer(initialSessionState, { type: 'connected' });
     expect(state.connected).toBe(true);

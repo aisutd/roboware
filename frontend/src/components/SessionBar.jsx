@@ -1,88 +1,102 @@
-import { Pause, Play, Plus, SkipForward, Square } from 'lucide-react';
-
 import { NAVIGATION_LABELS, NAVIGATION_MODES } from '../lib/navigation';
-const STATUS = {
-  running: ['Running', 'badge-live'], paused: ['Paused', 'badge-warn'], created: ['Ready', 'badge-warn'],
-  finished: ['Finished', ''], interrupted: ['Stopped', ''],
-};
-const SPEEDS = [1, 2, 5, 10, 'max'];
-const LAYERS = [
-  { key: 'paths', label: 'Paths', hint: 'P' },
-  { key: 'qHeatmap', label: 'Heatmap', hint: 'Q' },
-  { key: 'yieldHalos', label: 'Halos', hint: 'H' },
-];
+import { PixelIcon } from './PixelIcon';
 
-export function SessionBar({ session, connected, tick, layers, onToggleLayer, onControl, onNewSession, onSaveModel }) {
+const STATUS = {
+  running: ['Running', 'live'], paused: ['Paused', 'hold'], created: ['Ready', 'hold'],
+  finished: ['Finished', 'off'], interrupted: ['Stopped', 'off'],
+};
+const TICK_DIGITS = 5;
+
+// The tick counter as an odometer: each digit sits in its own cell and flips when it changes.
+function TickOdometer({ tick }) {
+  const digits = String(tick).padStart(TICK_DIGITS, '0').split('');
+  return (
+    <div className="tick-odometer" title="Simulation tick: one step of the simulation (0.6 s)">
+      <span className="tick-label">Tick</span>
+      <span className="tick-digits">
+        {/* Keyed on the digit so a changed digit remounts and replays the flip. */}
+        {digits.map((d, i) => <span key={`${i}-${d}`} className="tick-digit">{d}</span>)}
+      </span>
+    </div>
+  );
+}
+
+// Session identity and controls, floating over the warehouse floor.
+export function SessionBar({
+  session, connected, tick, layers, onToggleLayer, onControl, onNewSession, onSaveModel, onResults,
+  panelsOpen, onTogglePanels, fullscreen, onToggleFullscreen, onHelp, audio, onToggleAudio,
+}) {
   const status = session?.status ?? 'created';
   const config = session?.config ?? {};
-  const speed = session?.speed ?? 1;
   const running = status === 'running';
   const over = !session || status === 'finished' || status === 'interrupted';
-  const [statusLabel, statusClass] = STATUS[status] ?? [status, ''];
+  const [statusLabel, led] = connected ? STATUS[status] ?? [status, 'off'] : ['Offline', 'down'];
+  const mode = NAVIGATION_MODES.find((m) => m.id === config.routing_mode);
 
   return (
-    <div className="session-chrome">
-      <header className="session-header">
-        <div className="session-identity">
-          <div className="eyebrow">Operations / Simulation</div>
-          <h1 className="session-name">{session?.name ?? 'Loading session…'}</h1>
-          <div className="session-metadata">
-            <span title={NAVIGATION_MODES.find((mode) => mode.id === config.routing_mode)?.description}>{NAVIGATION_LABELS[config.routing_mode] ?? 'Shortest-path navigation'} <small>({NAVIGATION_MODES.find((mode) => mode.id === config.routing_mode)?.technical ?? 'A*'})</small></span>
-            <span>Model: {session?.model_name ?? 'None'}</span>
-            {config.online_learning && <span className="learning-label">Online learning</span>}
+    <>
+      <header className="hud-glass hud-identity">
+        <span className={`status-led led-${led}`} aria-hidden="true" />
+        <div className="hud-identity-text">
+          <div className="hud-identity-row">
+            <h1 className="session-name">{session?.name ?? 'Loading session…'}</h1>
+            <span className={`status-word led-${led}`}>{statusLabel}</span>
+          </div>
+          <div className="hud-meta">
+            <span className="hud-chip" title={mode?.description}>{NAVIGATION_LABELS[config.routing_mode] ?? 'Shortest path'}</span>
+            <span className="hud-chip">{session?.model_name ?? 'No model'}</span>
+            {config.online_learning && <span className="hud-chip hud-chip-learning">Learning</span>}
           </div>
         </div>
-        <div className="session-health">
-          <span className={`connection-status ${connected ? 'connected' : ''}`}>
-            <span className="operational-dot" />{connected ? 'Simulation connected' : 'Simulation offline'}
-          </span>
-          <span className={`badge ${statusClass}`}>{statusLabel}</span>
-          <div className="session-clock"><span className="stat-label" title="One tick is one simulation step, not a real-world second.">Tick</span><span className="font-mono">{String(tick).padStart(5, '0')}</span></div>
-        </div>
+        <TickOdometer tick={tick} />
       </header>
-      <div className="session-bar" role="toolbar" aria-label="Simulation controls">
-      <div className="bar-group">
-        <button type="button" className={`clay-btn ${running ? '' : 'clay-btn-accent'}`} style={{ minWidth: 88 }}
-          onClick={() => onControl(running ? 'pause' : 'play')} disabled={over} title="Play / pause (Space)">
-          {running ? <><Pause size={14} /> Pause</> : <><Play size={14} /> Play</>}
-        </button>
-        <button type="button" className="clay-btn" onClick={() => onControl('step')} disabled={running || over} title="Advance one tick">
-          <SkipForward size={14} /> Step
-        </button>
-        <span className="toolbar-label">Speed</span>
-        <div className="seg" role="group" aria-label="Speed">
-          {SPEEDS.map((s) => (
-            <button key={s} type="button" className={speed === s ? 'on' : ''} aria-pressed={speed === s} disabled={over} onClick={() => onControl('set_speed', s)}>
-              {s === 'max' ? 'Max' : `${s}×`}
-            </button>
-          ))}
-        </div>
-        <button type="button" className="clay-btn" onClick={() => onControl('stop')} disabled={over} title="End the session and save its results">
-          <Square size={12} /> Stop
-        </button>
-      </div>
 
-      <div className="bar-group layer-controls">
-      <span className="toolbar-label">Layers</span>
-      <div className="seg" role="group" aria-label="Map layers">
-        {LAYERS.map(({ key, label, hint }) => {
-          const noModel = key === 'qHeatmap' && !config.model_id;
-          return (
-            <button key={key} type="button" className={layers[key] ? 'on' : ''} aria-pressed={layers[key]} disabled={noModel}
-              onClick={() => onToggleLayer(key)} title={noModel ? 'Needs a session with a model' : `${label} (${hint})`}>
-              {label}
-            </button>
-          );
-        })}
+      <div className="hud-glass hud-toolbar" role="toolbar" aria-label="Simulation controls">
+        <div className="bar-group">
+          <button type="button" className={`px-btn ${running ? '' : 'px-primary'}`} style={{ minWidth: 92 }}
+            onClick={() => onControl(running ? 'pause' : 'play')} disabled={over} title="Play / pause (Space)">
+            <PixelIcon name={running ? 'pause' : 'play'} /> {running ? 'Pause' : 'Play'}
+          </button>
+          <button type="button" className="px-btn" onClick={() => onControl('step')} disabled={running || over} title="Advance one tick">
+            <PixelIcon name="step" /> Step
+          </button>
+          <button type="button" className="px-btn px-danger" onClick={() => onControl('stop')} disabled={over} title="End the session and save its results">
+            <PixelIcon name="stop" /> Stop
+          </button>
+        </div>
+        <div className="bar-group">
+          <button type="button" className="px-btn px-toggle" aria-pressed={layers.paths} onClick={() => onToggleLayer('paths')} title="Show robot paths (P)">
+            <span className="px-led" /><PixelIcon name="paths" /> Paths
+          </button>
+          <button type="button" className="px-btn px-toggle" onClick={onTogglePanels} aria-pressed={panelsOpen} aria-controls="operational-inspector"
+            title={panelsOpen ? 'Hide stats, robots and orders' : 'Show stats, robots and orders'}>
+            <span className="px-led" /><PixelIcon name="panels" /> Panels
+          </button>
+          {audio && (
+            <>
+              <button type="button" className="px-btn px-toggle" aria-pressed={audio.music} onClick={() => onToggleAudio('music')} title="Background music" aria-label="Background music">
+                <span className="px-led" /><PixelIcon name="music" />
+              </button>
+              <button type="button" className="px-btn px-toggle" aria-pressed={audio.sfx} onClick={() => onToggleAudio('sfx')} title="Sound effects" aria-label="Sound effects">
+                <span className="px-led" /><PixelIcon name="sfx" />
+              </button>
+            </>
+          )}
+          <button type="button" className="px-btn px-square" onClick={onToggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'} title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+            <PixelIcon name={fullscreen ? 'exitFullscreen' : 'fullscreen'} />
+          </button>
+          <button type="button" className="px-btn px-square" onClick={onHelp} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">
+            <PixelIcon name="help" />
+          </button>
+        </div>
+        <div className="bar-group">
+          {over && session && onResults && <button type="button" className="px-btn" onClick={onResults}><PixelIcon name="results" /> Results</button>}
+          {config.online_learning && onSaveModel && (
+            <button type="button" className="px-btn" onClick={onSaveModel}><PixelIcon name="save" /> Save model</button>
+          )}
+          <button type="button" className="px-btn px-primary" onClick={onNewSession}><PixelIcon name="plus" /> New session</button>
+        </div>
       </div>
-      </div>
-      <div className="bar-group session-actions">
-      {config.online_learning && onSaveModel && (
-        <button type="button" className="clay-btn" onClick={onSaveModel}>Save learned model</button>
-      )}
-      <button type="button" className="clay-btn clay-btn-accent" onClick={onNewSession}><Plus size={14} /> New session</button>
-      </div>
-      </div>
-    </div>
+    </>
   );
 }

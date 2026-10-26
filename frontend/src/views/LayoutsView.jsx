@@ -7,7 +7,7 @@ import { cellKey, coordLabel, createBlueprintCells, pickFaces } from '../lib/gri
 import { emptyLayoutHistory, layoutHistoryReducer } from '../lib/layoutHistory';
 import { api } from '../services/api';
 
-const NO_LAYERS = { paths: false, qHeatmap: false, yieldHalos: false };
+const NO_LAYERS = { paths: false, qHeatmap: false };
 const DRAFT_ID = '__local_blueprint__';
 
 export function LayoutsView({ onUseLayout }) {

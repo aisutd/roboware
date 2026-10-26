@@ -16,7 +16,7 @@ describe('custom warehouse blueprints', () => {
   });
   it('renders custom dimensions and coordinates beyond column Z without changing logical cell count', () => {
     const layout = { width: 40, height: 4, cells: createBlueprintCells(40, 4), products: [], pick_faces: [] };
-    const html = renderToStaticMarkup(createElement(WarehouseMapCanvas, { layout }));
+    const html = renderToStaticMarkup(createElement(WarehouseMapCanvas, { layout, initialShowGrid: true }));
     expect(html.match(/class="tile-base tile-cell/g)).toHaveLength(160);
     expect(html).toContain('>AN</div>');
     expect(html).toContain('grid-template-columns:repeat(40, 56px)');

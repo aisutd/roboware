@@ -10,7 +10,7 @@ import { coordLabel } from '../lib/grid';
 import { DEFAULT_HYPERPARAMETERS } from '../lib/hyperparameters';
 import { api } from '../services/api';
 
-const HEAT_LAYERS = { paths: false, qHeatmap: true, yieldHalos: false };
+const HEAT_LAYERS = { paths: false, qHeatmap: true };
 
 function toPoints(values, episodes) {
   const n = values.length;
@@ -275,7 +275,7 @@ export function ModelsView({ initialLayoutId = null, initialModelId = null, onUs
               </div>
               {detail.destinations.length ? (
                 <div className="policy-viewport">
-                  <WarehouseMapCanvas layout={layout} layers={HEAT_LAYERS} heatmap={heatmap?.modelId === selectedId && heatmap?.destinationKey === heatDest?.join(',') ? heatmap : null} heatmapTarget={heatDest} />
+                  <WarehouseMapCanvas wheelZoom={false} layout={layout} layers={HEAT_LAYERS} heatmap={heatmap?.modelId === selectedId && heatmap?.destinationKey === heatDest?.join(',') ? heatmap : null} heatmapTarget={heatDest} />
                 </div>
               ) : (
                 <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>Train the model to see its Q-value heatmap and policy arrows.</p>
