@@ -191,6 +191,9 @@ export function SessionView({ sessionId, onSessionChange, onNavigate, initialLay
           robotChatter={state.robotChatter}
           robotReactions={state.robotReactions}
           robotTrails={state.robotTrails}
+          receiving={state.receiving}
+          shipments={state.shipments}
+          paused={status !== 'running'}
           robotNames={robotNames}
           routingMode={session?.config?.routing_mode}
           overlay
@@ -221,7 +224,7 @@ export function SessionView({ sessionId, onSessionChange, onNavigate, initialLay
       <aside id="operational-inspector" className="session-side hud-side" hidden={!inspectorOpen} aria-label="Stats, robots and orders">
         <Window title={<><PixelIcon name="stats" /> Stats</>} className="operations-stats" style={{ flex: 'none' }}
           collapsible collapsed={folded.stats} onToggle={() => toggleFolded('stats')}>
-          <SessionStats stats={state.stats} orders={state.orders} />
+          <SessionStats stats={state.stats} orders={state.orders} receiving={state.receiving} />
         </Window>
         <RobotsPanel robots={state.robots} selectedRobotId={selected?.id} onSelectRobot={selectRobot} productNames={productNames}
           robotCheers={state.robotCheers} tick={state.tick} orders={state.orders} robotNames={robotNames}

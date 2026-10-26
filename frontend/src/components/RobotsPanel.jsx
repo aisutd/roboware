@@ -8,6 +8,7 @@ import { Window } from './Window';
 const STATUS_TEXT = {
   idle: 'Idle', parking: 'Parking', to_pick: 'To shelf', picking: 'Picking', to_pack: 'To packing',
   queued_pack: 'Waiting to pack', packing: 'Packing', to_dock: 'To dock', to_charger: 'To charger', charging: 'Charging',
+  to_unload: 'To the truck', loading: 'Lifting pallet', to_shelf: 'Hauling stock', restocking: 'Restocking',
 };
 const BATTERY_SEGMENTS = 5;
 

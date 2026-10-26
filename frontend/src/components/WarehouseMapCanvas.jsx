@@ -1,12 +1,14 @@
 import { memo, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { Package } from 'lucide-react';
-import { ACTION_ARROWS, ACTIONS, cellsOnLine, cellKey, colLabel, coordLabel } from '../lib/grid';
+import { ACTION_ARROWS, ACTIONS, cellsOnLine, cellKey, colLabel, coordLabel, findBays, findShippingZones } from '../lib/grid';
 import { batteryColor } from '../lib/battery';
 import { CHARGER_SPRITE, DOCK_SPRITE, PACKING_SPRITE, RACK_SPRITES } from '../lib/floorArt';
 import { followOffset } from '../lib/mapCamera';
+import { TRUCK_ROOM, dockAnchor, truckSides } from '../lib/receiving';
 import { BUBBLE_TICKS, REACTION_TICKS, TRAIL_TICKS } from '../lib/chatter';
 import { MiniMap } from './MiniMap';
 import { PixelIcon } from './PixelIcon';
+import { CargoCrate, DeliveryVan, PalletSprite, TruckDock, VanRoad } from './Receiving';
 import { SpeechBubble, ThoughtBubble } from './RobotBubbles';
 import { RobotPet } from './RobotPet';
 
@@ -14,7 +16,9 @@ const CELL = 56;
 const GAP = 4;
 const PITCH = CELL + GAP;
 const LABEL_W = 32;
-const TILE_CLASS = { aisle: 'tile-aisle', rack: 'tile-rack', packing: 'tile-packing', dock: 'tile-delivery', charger: 'tile-charging' };
+const TILE_CLASS = { aisle: 'tile-aisle', rack: 'tile-rack', packing: 'tile-packing', dock: 'tile-delivery', shipping: 'tile-shipping', charger: 'tile-charging', unload: 'tile-unload', void: 'tile-void', ghost: 'tile-ghost' };
+// void: no floor (the warehouse can take any shape). ghost: the editor's ring of squares the floor can grow into.
+const KIND_LABELS = { rack: 'Storage rack', aisle: 'Floor', packing: 'Packing', dock: 'Shipping dock', charger: 'Charger', shipping: 'Drop-off zone', unload: 'Unload bay', void: 'No floor', ghost: 'Add floor here' };
 const DEFAULT_LAYERS = { paths: true, qHeatmap: false };
 // Mouse-wheel zoom levels, relative to the fitted view (1 = whole warehouse).
 const ZOOM_STEPS = [1, 1.25, 1.5, 2, 2.5, 3, 4];
@@ -25,6 +29,7 @@ const NO_INSET = { top: 0, right: 0, bottom: 0, left: 0 };
 // The fitted view may scale the warehouse up to fill large screens, not just down to fit small ones.
 const MAX_FIT_SCALE = 3;
 
+const NO_ORIGIN = { x: 0, y: 0 };
 const center = (v) => v * PITCH + CELL / 2;
 
 const STATION_SPRITES = { charger: CHARGER_SPRITE, packing: PACKING_SPRITE, dock: DOCK_SPRITE };
@@ -39,7 +44,17 @@ function Sprite({ layers, className, lift = 0 }) {
 }
 
 // Floor tiles as 8-bit sprites: shelves (three box layouts picked by position), chargers, packing stations, docks.
-const TileGlyph = memo(function TileGlyph({ kind, location, variant }) {
+const TileGlyph = memo(function TileGlyph({ kind, location, variant, bay }) {
+  if (kind === 'unload' || kind === 'shipping') {
+    // Receiving bays point their chevrons in (stock arrives); drop-off zones point them out (parcels leave).
+    const turn = kind === 'unload' ? INWARD_TURN[bay?.side] : OUTWARD_TURN[bay?.side];
+    return (
+      <span className={`zone-art zone-${kind} ${bay?.side ? '' : 'is-stranded'}`} style={{ '--in': `${turn ?? 0}deg` }}>
+        {bay?.mouth && <svg className="zone-chevron" viewBox="0 0 7 4" shapeRendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h1v1h1v-1h1v-1h2v1h-1v1h-1v1h-1v1h-1v-1h-1v-1h-1v-1h-1z" /></svg>}
+        {bay?.label && <span className="zone-caption">{kind === 'unload' ? 'Receiving' : 'Drop-off'}</span>}
+      </span>
+    );
+  }
   if (kind === 'rack') {
     return (
       <>
@@ -58,18 +73,29 @@ const TileGlyph = memo(function TileGlyph({ kind, location, variant }) {
   );
 });
 
-const STOCK_CELLS = 4;
+// Turn for the bay chevron (drawn pointing down) so it points into the warehouse from the truck's side.
+const INWARD_TURN = { up: 0, down: 180, left: -90, right: 90 };
+const OUTWARD_TURN = { up: 180, down: 0, left: 90, right: -90 };
+// Stock level bands for the shelf bin: healthy, half, low (a truck gets called), out.
+const stockLevel = (left, capacity) => (left <= 0 ? 'out' : left / capacity < 0.34 ? 'low' : left / capacity < 0.67 ? 'half' : 'full');
+const LEVEL_TEXT = { full: 'well stocked', half: 'half full', low: 'running low', out: 'out of stock' };
 
-// A stocked pick spot: product number and a four-cell stock meter that empties as items are picked.
-function FaceMarker({ products, stock }) {
+// A stocked pick spot: the product number over one bar that empties and changes colour with the stock
+// (green, yellow, red; an empty red outline when out). A small green dot means a refill is on the way.
+// Exact counts live in the tooltip.
+function FaceMarker({ products, stock, incoming }) {
   if (!products) return <div className="face-dot" />;
-  const initial = products.reduce((n, p) => n + p.stock, 0);
+  const capacity = products.reduce((n, p) => n + (p.capacity ?? p.stock), 0);
   const left = products.reduce((n, p) => n + (stock?.[p.sku] ?? p.stock), 0);
-  const lit = initial ? Math.ceil((left / initial) * STOCK_CELLS) : 0;
+  const coming = products.reduce((n, p) => n + (incoming?.[p.sku] ?? 0), 0);
+  const level = stockLevel(left, capacity);
+  const fill = capacity ? Math.min(100, Math.round((Math.max(0, left) / capacity) * 100)) : 0;
+  const title = products.map((p) => `${p.name} (${p.sku}): ${stock?.[p.sku] ?? p.stock} of ${p.capacity ?? p.stock}`).join('\n')
+    + ` · ${LEVEL_TEXT[level]}${coming ? ` · ${coming} on the way` : ''}`;
   return (
-    <div className={`face-marker ${lit <= 1 ? 'stock-low' : ''}`} title={products.map((p) => `${p.sku} ${p.name}: ${stock?.[p.sku] ?? p.stock}`).join('\n')}>
-      <span>{products[0].sku.replace('SKU-', '#')}</span>
-      <div className="face-stock">{Array.from({ length: STOCK_CELLS }, (_, i) => <span key={i} className={i < lit ? 'on' : ''} />)}</div>
+    <div className={`stock-bin stock-${level}`} title={title}>
+      <span className="stock-sku">{products[0].sku.replace('SKU-', '#')}{coming > 0 && <i className="stock-incoming" />}</span>
+      <span className="stock-bar"><span style={{ width: `${fill}%` }} /></span>
     </div>
   );
 }
@@ -99,18 +125,32 @@ export function WarehouseMapCanvas({
   robotReactions = null,
   robotTrails = null,
   robotNames = null,
+  // Trucks and pallets from the session stream ({ trucks, pallets, backlog }); null outside a session.
+  receiving = null,
+  // paused: freezes truck animations along with the simulation.
+  paused = false,
+  // dockGhosts: in the editor, outline where trucks will park at each valid bay.
+  dockGhosts = false,
+  // Vans leaving drop-off zones, each with its own door and start time so they never overlap (lib/shipments.js).
+  shipments = null,
   // routingMode tells the thought bubble whether moves come from the learned policy or A*.
   routingMode = null,
   // overlay: float the Grid/Follow controls and the readout over the floor instead of in bars.
   overlay = false,
   // inset: px of the viewport covered by floating panels; the warehouse fits and centres in the rest.
   inset = NO_INSET,
+  // origin: the cell shown as A1 (the editor pads the floor with a ring of ghost squares).
+  origin = NO_ORIGIN,
+  minimap = true,
 }) {
   const viewportRef = useRef(null);
   const boardRef = useRef(null);
   const gridRef = useRef(null);
   const dragRef = useRef(null);
   const paintStrokeRef = useRef(null);
+  // Last real pointer position. Growing the floor re-fits the map, so squares slide under a still pointer and
+  // the browser reports them as entered; only squares the pointer actually moved onto get painted.
+  const pointerRef = useRef(null);
   const strokeSequenceRef = useRef(0);
   const [zoomStep, setZoomStep] = useState(0);
   const zoom = ZOOM_STEPS[zoomStep];
@@ -126,8 +166,25 @@ export function WarehouseMapCanvas({
   const height = layout?.height ?? 0;
   const gridW = width * PITCH - GAP;
   const gridH = height * PITCH - GAP;
-  const boardW = gridW + LABEL_W + 8 + 72;
-  const boardH = gridH + 24 + 72;
+  // Unload bays and the side of the floor each one's trucks come from; the board leaves room there.
+  const bays = useMemo(() => (layout ? findBays(layout.cells) : []), [layout]);
+  const shipping = useMemo(() => (layout ? findShippingZones(layout.cells) : []), [layout]);
+  // Trucks back into bays and vans drive off from drop-off zones: both need road room outside the floor.
+  const sides = useMemo(() => truckSides([...bays, ...shipping]), [bays, shipping]);
+  const room = (side) => (sides.has(side) ? TRUCK_ROOM : 0);
+  const boardW = gridW + LABEL_W + 8 + 72 + room('left') + room('right');
+  const boardH = gridH + 24 + 72 + room('up') + room('down');
+  // Per zone cell: which side it opens to, whether it is on that edge (gets a chevron), and the caption cell.
+  const bayCells = useMemo(() => {
+    const map = new Map();
+    [...bays, ...shipping].forEach((bay) => {
+      const mouth = new Set(bay.mouth.map(([x, y]) => cellKey(x, y)));
+      bay.cells.forEach(([x, y], i) => map.set(cellKey(x, y), { side: bay.side, mouth: mouth.has(cellKey(x, y)), label: i === 0 && bay.cells.length > 1 }));
+    });
+    return map;
+  }, [bays, shipping]);
+  const palletByCell = useMemo(() => new Map((receiving?.pallets ?? []).filter((p) => p.x != null).map((p) => [cellKey(p.x, p.y), p])), [receiving]);
+  const productNames = useMemo(() => Object.fromEntries((layout?.products ?? []).map((p) => [p.sku, p.name])), [layout]);
   const insetX = inset.left + inset.right;
   const insetY = inset.top + inset.bottom;
   // Centre of the uncovered area relative to the viewport centre.
@@ -165,7 +222,7 @@ export function WarehouseMapCanvas({
     let min = Infinity;
     let max = -Infinity;
     layout.cells.forEach((row, y) => row.forEach((kind, x) => {
-      if (kind === 'rack') return;
+      if (kind === 'rack' || kind === 'void') return;
       const q = heatmap.values[y * width + x];
       const best = Math.max(...q);
       cells.set(cellKey(x, y), { best, action: ACTIONS[q.indexOf(best)] });
@@ -293,9 +350,10 @@ export function WarehouseMapCanvas({
       {robots.length > 0 && <button type="button" className="clay-btn clay-pill-sm" disabled={!selectedRobot} aria-pressed={follow} onClick={() => setFollow((v) => !v)}>Follow {selectedRobot?.id ?? 'robot'}</button>}
     </div>
   );
+  const label = (x, y) => (x < origin.x || y < origin.y ? '' : coordLabel(x - origin.x, y - origin.y));
   const readout = hovered ? (
     <div className="map-readout">
-      <strong>{coordLabel(hovered.x, hovered.y)}</strong>
+      <strong>{label(hovered.x, hovered.y)}</strong>
       <span style={{ textTransform: 'capitalize' }}>{hovered.kind}</span>
       {hovered.products && <span>{hovered.products.map((p) => `${p.name} (${stock?.[p.sku] ?? p.stock})`).join(', ')}</span>}
       {hovered.best !== undefined && <span style={{ color: 'var(--orange)' }}>Best Q {hovered.best.toFixed(1)}</span>}
@@ -321,8 +379,8 @@ export function WarehouseMapCanvas({
         <span className="map-terminal-prompt">&gt;</span>
         {hovered ? (
           <>
-            <strong>{coordLabel(hovered.x, hovered.y)}</strong>
-            <span style={{ textTransform: 'capitalize' }}>{hovered.kind === 'rack' ? 'Storage rack' : hovered.kind}</span>
+            <strong>{label(hovered.x, hovered.y)}</strong>
+            <span>{KIND_LABELS[hovered.kind] ?? hovered.kind}</span>
             {hovered.products && <span>{hovered.products.map((p) => `${p.name} (${stock?.[p.sku] ?? p.stock})`).join(', ')}</span>}
           </>
         ) : <span className="map-terminal-cursor" />}
@@ -332,7 +390,7 @@ export function WarehouseMapCanvas({
 
   return (
     <div className={`map-canvas ${overlay ? 'map-canvas-overlay' : ''}`}>
-      {overlay && (
+      {overlay && minimap && (
         <MiniMap layout={layout} robots={robots} selectedRobotId={selectedRobotId} view={view} onJump={jumpTo}
           style={{ right: inset.right + 12 }} />
       )}
@@ -349,6 +407,7 @@ export function WarehouseMapCanvas({
           dragRef.current = { x: event.clientX, y: event.clientY, pan: offset, moving: false };
         }}
         onPointerMove={(event) => {
+          pointerRef.current = [event.clientX, event.clientY];
           const drag = dragRef.current;
           if (!drag) return;
           const dx = event.clientX - drag.x;
@@ -373,16 +432,21 @@ export function WarehouseMapCanvas({
             onSelectRobot?.(null);
           }
         }} onPointerCancel={() => { dragRef.current = null; paintStrokeRef.current = null; }}>
-      <div ref={boardRef} className={`map-board ${showGrid ? '' : 'map-grid-hidden'} ${follow && selectedRobot ? 'map-follow' : ''}`} style={{ transform: `translate(${offset.x + base.x}px, ${offset.y + base.y}px) scale(${effectiveScale})` }}>
+      <div ref={boardRef} className={`map-board ${showGrid ? '' : 'map-grid-hidden'} ${follow && selectedRobot ? 'map-follow' : ''} ${paused ? 'map-paused' : ''}`}
+        style={{
+          transform: `translate(${offset.x + base.x}px, ${offset.y + base.y}px) scale(${effectiveScale})`,
+          ...(sides.has('up') && { paddingTop: 28 + TRUCK_ROOM }), ...(sides.has('down') && { paddingBottom: 28 + TRUCK_ROOM }),
+          ...(sides.has('left') && { paddingLeft: 28 + TRUCK_ROOM }), ...(sides.has('right') && { paddingRight: 28 + TRUCK_ROOM }),
+        }}>
         {showGrid && (
           <div className="map-cols" style={{ gridTemplateColumns: `repeat(${width}, ${CELL}px)`, paddingLeft: LABEL_W + 8 }}>
-            {Array.from({ length: width }, (_, x) => <div key={x} className="coord-label">{colLabel(x)}</div>)}
+            {Array.from({ length: width }, (_, x) => <div key={x} className="coord-label">{x < origin.x ? '' : colLabel(x - origin.x)}</div>)}
           </div>
         )}
         <div style={{ display: 'flex', gap: 8 }}>
           {showGrid && (
             <div className="map-rows" style={{ gridTemplateRows: `repeat(${height}, ${CELL}px)`, width: LABEL_W }}>
-              {Array.from({ length: height }, (_, y) => <div key={y} className="coord-label">{y + 1}</div>)}
+              {Array.from({ length: height }, (_, y) => <div key={y} className="coord-label">{y < origin.y ? '' : y + 1 - origin.y}</div>)}
             </div>
           )}
           <div ref={gridRef} style={{ position: 'relative' }}>
@@ -394,24 +458,27 @@ export function WarehouseMapCanvas({
                 const h = heat?.cells.get(key);
                 const flashing = flashCells?.has(key);
                 const classes = ['tile-base', 'tile-cell', TILE_CLASS[kind] ?? 'tile-aisle'];
-                if (flashing) classes.push('tile-flash');
                 if (errorCells?.has(key)) classes.push('tile-error');
                 return (
                   <div
-                    key={flashing ? `${key}-${flashToken}` : key}
+                    key={key}
                     className={classes.join(' ')}
-                    title={`${coordLabel(x, y)} · ${kind === 'rack' ? 'Storage rack' : kind}`}
+                    title={[label(x, y), KIND_LABELS[kind] ?? kind].filter(Boolean).join(' · ')}
                     style={{ cursor: activeBrush ? 'crosshair' : 'default' }}
-                    onMouseDown={(event) => { if (event.button === 0) { event.preventDefault(); paint(x, y, true); } }}
+                    onMouseDown={(event) => { if (event.button === 0) { event.preventDefault(); pointerRef.current = [event.clientX, event.clientY]; paint(x, y, true); } }}
                     onMouseEnter={(e) => {
                       setHovered({ x, y, kind, products, best: h?.best });
-                      if (e.buttons === 1) paint(x, y);
+                      const moved = !pointerRef.current || e.clientX !== pointerRef.current[0] || e.clientY !== pointerRef.current[1];
+                      if (e.buttons === 1 && moved) paint(x, y);
                       else paintStrokeRef.current = null;
                     }}
                     onMouseLeave={() => setHovered(null)}
                   >
-                    <TileGlyph kind={kind} location={showGrid ? coordLabel(x, y) : null} variant={x * 7 + y * 3} />
-                    {faceSet.has(key) && <FaceMarker products={products} stock={stock} />}
+                    <TileGlyph kind={kind} location={showGrid ? label(x, y) : null} variant={x * 7 + y * 3} bay={bayCells.get(key)} />
+                    {palletByCell.has(key) && <PalletSprite key={palletByCell.get(key).id} pallet={palletByCell.get(key)} side={bayCells.get(key)?.side} name={productNames[palletByCell.get(key).sku]} />}
+                    {/* Keyed on the tick so each event replays the flash without rebuilding the tile. */}
+                    {flashing && <span key={flashToken} className="tile-flash" />}
+                    {faceSet.has(key) && <FaceMarker products={products} stock={stock} incoming={receiving?.incoming} />}
                     {station?.occupant && <div className="station-ring">{station.remaining}</div>}
                     {h && <div className="heat-fill" style={{ opacity: heat.max > heat.min ? 0.1 + (0.55 * (h.best - heat.min)) / (heat.max - heat.min) : 0.1 }} />}
                     {h && <span className="heat-arrow">{ACTION_ARROWS[h.action]}</span>}
@@ -453,6 +520,21 @@ export function WarehouseMapCanvas({
               })}
             </svg>
 
+            {/* Each bay's dock outside the floor, with its truck backing in, unloading or driving off. */}
+            {bays.filter((bay) => bay.side).map((bay, i) => (
+              <TruckDock key={`dock-${bay.cells[0].join(',')}`} anchor={dockAnchor(bay, PITCH, GAP)} ghost={dockGhosts}
+                truck={receiving?.trucks?.find((t) => t.bay === i)} waiting={receiving?.backlog?.length ?? 0} />
+            ))}
+
+            {/* The road each drop-off zone's vans drive away on. */}
+            {shipping.filter((zone) => zone.side).map((zone) => (
+              <VanRoad key={`road-${zone.cells[0].join(',')}`} anchor={dockAnchor(zone, PITCH, GAP)} />
+            ))}
+            {/* A van pulls away from a drop-off zone for every delivery there. */}
+            {(shipments ?? []).map((van) => (
+              <DeliveryVan key={van.id} anchor={dockAnchor({ side: van.side, mouth: [van.door] }, PITCH, GAP)} delay={van.delay} />
+            ))}
+
             {robots.map((robot) => {
               const carried = (robot.carrying ?? []).reduce((n, i) => n + i.qty, 0);
               const selected = selectedRobotId === robot.id;
@@ -475,6 +557,7 @@ export function WarehouseMapCanvas({
                     nodding={nodded !== undefined && flashToken - nodded <= REACTION_TICKS} />
                   {speaking && <SpeechBubble chatter={chatter} />}
                   {selected && <ThoughtBubble robot={robot} routingMode={routingMode} />}
+                  {robot.pallet && <CargoCrate pallet={robot.pallet} />}
                   <span className="robot-label">{robot.id}</span>
                   <span className="robot-battery"><div style={{ width: `${robot.battery}%`, background: batteryColor(robot.battery) }} /></span>
                   {(robot.package_id || carried > 0) && (

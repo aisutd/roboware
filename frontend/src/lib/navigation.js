@@ -1,6 +1,6 @@
 // UI terminology only. API routing identifiers remain unchanged.
 export const NAVIGATION_MODES = [
-  { id: 'astar', label: 'Shortest-path navigation', short: 'Shortest path', tag: 'A*', blurb: 'Plans the shortest route. No training needed.', technical: 'A*', description: 'Plans a shortest route around storage racks. Start here: no AI model or training is needed.' },
+  { id: 'astar', label: 'Shortest-path navigation', short: 'Shortest path', tag: 'A*', blurb: 'Plans the shortest route around the racks.', technical: 'A*', description: 'Plans a shortest route around storage racks. Start here: no AI model or training is needed.' },
   { id: 'q_only', label: 'AI-trained navigation', short: 'Learned', tag: 'Q', blurb: 'Follows routes a trained model learned.', technical: 'Q-learning', description: 'Uses routes learned through practice in this warehouse. Train a model first to use learned navigation; shortest-path routing is the fallback when a learned route is unavailable.' },
   { id: 'hybrid', label: 'Combined navigation', short: 'Hybrid', tag: 'A*+Q', blurb: 'Learned routes, with shortest path as the backup.', technical: 'Hybrid A* + Q-learning', description: 'Combines shortest-path planning with an AI-trained policy. Train a model first to add learned navigation; without it, the simulation uses shortest-path routing.' },
 ];

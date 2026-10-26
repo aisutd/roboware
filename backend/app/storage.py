@@ -79,10 +79,15 @@ class Storage:
         return row
 
     def ensure_default_layout(self, layout: dict) -> None:
-        if not self._rows("SELECT id FROM layouts WHERE id = 'default'"):
-            ts = now()
+        """Seed the built-in warehouse, and refresh it when the code's version changes (e.g. new cell types)."""
+        rows = self._rows("SELECT data FROM layouts WHERE id = 'default'")
+        ts = now()
+        if not rows:
             self._exec("INSERT INTO layouts VALUES ('default', ?, ?, 1, ?, ?)",
                        (layout.get("name", "Default warehouse"), json.dumps(layout), ts, ts))
+        elif json.loads(rows[0]["data"]).get("fingerprint") != layout.get("fingerprint") or \
+                json.loads(rows[0]["data"]).get("products") != layout.get("products"):
+            self._exec("UPDATE layouts SET data = ?, updated_at = ? WHERE id = 'default'", (json.dumps(layout), ts))
 
     def list_layouts(self) -> list[dict]:
         return [dict(r, is_default=bool(r["is_default"])) for r in
@@ -124,10 +129,13 @@ class Storage:
     def get_model(self, model_id: str) -> dict:
         return self._model_row(self._one("SELECT * FROM models WHERE id = ?", (model_id,), "Model"))
 
-    def update_model_after_training(self, model_id: str, trained_destinations: int, hp: dict) -> None:
+    def update_model_after_training(self, model_id: str, trained_destinations: int, hp: dict,
+                                    fingerprint: str | None = None) -> None:
         ts = now()
         self._exec("UPDATE models SET trained_destinations = ?, hyperparameters = ?, updated_at = ?, "
                    "last_trained_at = ? WHERE id = ?", (trained_destinations, json.dumps(hp), ts, ts, model_id))
+        if fingerprint:
+            self._exec("UPDATE models SET layout_fingerprint = ? WHERE id = ?", (fingerprint, model_id))
 
     def delete_model(self, model_id: str) -> None:
         self.get_model(model_id)

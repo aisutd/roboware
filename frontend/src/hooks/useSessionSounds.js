@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { robotVoice } from '../lib/robotNames';
 import { sound } from '../lib/sound';
 
-const EVENT_SOUNDS = { delivered: 'delivered', picked: 'picked', packed: 'packed', charged: 'charged' };
+const EVENT_SOUNDS = {
+  delivered: 'delivered', picked: 'picked', packed: 'packed', charged: 'charged',
+  truck_arriving: 'reverse', truck_docked: 'horn', truck_leaving: 'horn', pallet_dropped: 'pallet', restocked: 'restock',
+};
 const PREFS_KEY = 'roboware.audio';
 const DEFAULT_PREFS = { music: true, sfx: true };
 

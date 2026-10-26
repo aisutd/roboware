@@ -6,6 +6,10 @@
 export const SFX_RULES = {
   // name: [priority, cooldown ms, approximate length ms]
   rush: [5, 600, 340],
+  horn: [5, 2500, 620],
+  restock: [3, 700, 260],
+  reverse: [2, 2500, 900],
+  pallet: [2, 250, 100],
   delivered: [4, 500, 420],
   order: [3, 350, 200],
   charged: [2, 1500, 300],

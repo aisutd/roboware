@@ -1,14 +1,29 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { BuildKit } from '../components/BuildKit';
 import { Dialog } from '../components/Dialog';
-import { MapPaintToolbar } from '../components/MapPaintToolbar';
+import { ModelBadge } from '../components/ModelBadge';
+import { PixelChoice } from '../components/PixelChoice';
+import { PixelIcon } from '../components/PixelIcon';
 import { WarehouseMapCanvas } from '../components/WarehouseMapCanvas';
 import { useToast } from '../components/toastContext';
-import { cellKey, coordLabel, createBlueprintCells, pickFaces } from '../lib/grid';
+import { MAX_SIDE, MIN_SIDE, cellKey, createBlueprintCells, findBays, findShippingZones, pickFaces, trimVoid, withGhostRing } from '../lib/grid';
+import { KIT_KEYS } from '../lib/buildKit';
 import { emptyLayoutHistory, layoutHistoryReducer } from '../lib/layoutHistory';
 import { api } from '../services/api';
 
 const NO_LAYERS = { paths: false, qHeatmap: false };
 const DRAFT_ID = '__local_blueprint__';
+const RING = { x: 1, y: 1 };
+// Room left for the floating panels: the top bar, the Build kit on the left and the status strip below.
+const STUDIO_INSET = { top: 76, right: 12, bottom: 70, left: 246 };
+const NEEDS = [['packing', 'Packing'], ['charger', 'Charger'], ['dock', 'Dock'], ['unload', 'Unload']];
+const SIZES = [
+  { id: 'small', label: 'Small', width: 10, height: 8 },
+  { id: 'medium', label: 'Medium', width: 16, height: 10 },
+  { id: 'large', label: 'Large', width: 24, height: 14 },
+];
+
+const editableName = (layout) => (layout.is_default ? `${layout.name} copy` : layout.name);
 
 export function LayoutsView({ onUseLayout }) {
   const toast = useToast();
@@ -20,25 +35,25 @@ export function LayoutsView({ onUseLayout }) {
   const [history, edit] = useReducer(layoutHistoryReducer, emptyLayoutHistory);
   const cells = history.present;
   const [busy, setBusy] = useState(false);
-  const [validationError, setValidationError] = useState(null);
+  const [problem, setProblem] = useState(null);
   const [loadError, setLoadError] = useState(null);
-  const [listError, setListError] = useState(null);
   const [name, setName] = useState('');
-  const [brush, setBrush] = useState(null);
+  const [brush, setBrush] = useState('aisle');
+  const [dockKind, setDockKind] = useState('dock');
   const [errorCells, setErrorCells] = useState(null);
-  const [unreachable, setUnreachable] = useState([]);
-  const [savedNotice, setSavedNotice] = useState(null);
+  const [justSaved, setJustSaved] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [blueprint, setBlueprint] = useState({ name: 'New warehouse', width: 16, height: 10 });
-  const [dimensionError, setDimensionError] = useState(null);
+  const [blueprint, setBlueprint] = useState({ name: 'New warehouse', size: 'medium', start: 'empty' });
+  const pickerRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
     api.listLayouts()
-      .then((list) => { if (!cancelled) { setLayouts(list); setListError(null); } })
-      .catch((err) => { if (!cancelled) setListError(err.message); });
+      .then((list) => { if (!cancelled) setLayouts(list); })
+      .catch((err) => { if (!cancelled) toast(err.message); });
     return () => { cancelled = true; };
-  }, [listVersion]);
+  }, [listVersion, toast]);
 
   useEffect(() => {
     if (selectedId === DRAFT_ID) return undefined;
@@ -49,154 +64,253 @@ export function LayoutsView({ onUseLayout }) {
         setSaved(layout);
         edit({ type: 'load', cells: layout.cells.map((row) => [...row]) });
         setLoadError(null);
-        setValidationError(null);
-        setName(layout.is_default ? `${layout.name} copy` : layout.name);
+        setProblem(null);
         setErrorCells(null);
-        setUnreachable([]);
+        setName(editableName(layout));
       })
-      .catch((err) => { if (!cancelled) { setLoadError(err.message); toast(err.message); } });
+      .catch((err) => { if (!cancelled) setLoadError(err.message); });
     return () => { cancelled = true; };
-  }, [selectedId, loadVersion, toast]);
+  }, [selectedId, loadVersion]);
+
+  // Close the warehouse picker when clicking anywhere else.
+  useEffect(() => {
+    if (!pickerOpen) return undefined;
+    const close = (event) => { if (!pickerRef.current?.contains(event.target)) setPickerOpen(false); };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [pickerOpen]);
 
   const dirty = useMemo(() => Boolean(saved && cells && JSON.stringify(saved.cells) !== JSON.stringify(cells)), [saved, cells]);
+  const loading = !saved || saved.id !== selectedId || !cells;
+  const unsaved = Boolean(saved?.is_draft) || dirty || Boolean(saved && name !== editableName(saved));
+  const listed = layouts.find((l) => l.id === saved?.id);
+  const status = saved?.is_draft || dirty ? 'untrained' : listed?.model_status ?? saved?.model_status ?? 'untrained';
+  // The editor view: the floor inside a ring of ghost squares it can grow into.
   const preview = useMemo(() => {
     if (!saved || !cells) return null;
-    return { ...saved, cells, products: dirty ? [] : saved.products, pick_faces: pickFaces(cells) };
+    const ring = withGhostRing(cells);
+    const products = dirty ? [] : (saved.products ?? []).map((p) => ({ ...p, face: [p.face[0] + 1, p.face[1] + 1] }));
+    return { ...saved, width: ring[0].length, height: ring.length, cells: ring, products, pick_faces: pickFaces(ring) };
   }, [saved, cells, dirty]);
   const counts = useMemo(() => {
-    const result = { rack: 0, aisle: 0, packing: 0, dock: 0, charger: 0 };
-    cells?.forEach((row) => row.forEach((kind) => { if (kind in result) result[kind] += 1; }));
+    const result = { rack: 0, aisle: 0, packing: 0, dock: 0, shipping: 0, charger: 0, unload: 0, void: 0 };
+    cells?.forEach((row) => row.forEach((kind) => { result[kind] += 1; }));
     return result;
   }, [cells]);
-  const loading = !saved || saved.id !== selectedId;
-  const unsaved = Boolean(saved?.is_draft) || dirty || Boolean(saved && name !== (saved.is_default ? `${saved.name} copy` : saved.name));
-  const clearFeedback = () => { setValidationError(null); setErrorCells(null); setUnreachable([]); setSavedNotice(null); };
+  const spots = preview ? preview.pick_faces.length : 0;
+  // Unload bays that touch no outside edge: trucks could never reach them, so they light up red right away.
+  const stranded = useMemo(() => {
+    if (!preview) return null;
+    const cells = [...findBays(preview.cells), ...findShippingZones(preview.cells)].filter((b) => !b.side).flatMap((b) => b.cells);
+    return cells.length ? new Set(cells.map(([x, y]) => cellKey(x, y))) : null;
+  }, [preview]);
+  const strandedKinds = new Set(stranded ? [...stranded].map((key) => { const [x, y] = key.split(',').map(Number); return preview.cells[y][x]; }) : []);
+  // "Dock" is met by a dock station or a drop-off zone (zones must reach the outside edge).
+  const placed = (kind) => (kind === 'dock' ? counts.dock + counts.shipping : counts[kind]);
+  const met = (kind) => Boolean(placed(kind)) && !strandedKinds.has(kind) && !(kind === 'dock' && strandedKinds.has('shipping'));
+  const missing = NEEDS.filter(([kind]) => !met(kind));
+  const highlighted = useMemo(() => (stranded && errorCells ? new Set([...stranded, ...errorCells]) : stranded ?? errorCells), [stranded, errorCells]);
+
+  const clearFeedback = () => { setProblem(null); setErrorCells(null); setJustSaved(false); };
+  const paint = (x, y, stroke) => {
+    if (!brush || busy || loading) return;
+    edit({ type: 'grow', x, y, brush, stroke });
+    clearFeedback();
+  };
   const changeHistory = (type) => { edit({ type }); clearFeedback(); };
 
-  const paint = (x, y, stroke) => {
-    if (!brush || !saved || busy || loading) return;
-    edit({ type: 'paint', x, y, brush, stroke });
+  const open = (id) => {
+    setPickerOpen(false);
+    if (id === selectedId) return;
+    if (unsaved && !window.confirm('Leave without saving your changes?')) return;
+    setSelectedId(id);
+    setLoadError(null);
     clearFeedback();
   };
 
   const createDraft = (event) => {
     event.preventDefault();
-    try {
-      const width = Number(blueprint.width);
-      const height = Number(blueprint.height);
-      const blank = createBlueprintCells(width, height);
-      if (!blueprint.name.trim()) throw new Error('Enter a warehouse name.');
-      if (unsaved && !window.confirm('Discard the current unsaved changes and start a new blueprint?')) return;
-      // This is explicitly a local draft. No persistence call occurs until Save.
-      setSaved({ id: DRAFT_ID, is_draft: true, is_default: false, name: blueprint.name.trim(), width, height, cells: blank, products: [] });
-      edit({ type: 'load', cells: blank });
-      setName(blueprint.name.trim());
-      setSelectedId(DRAFT_ID);
-      setBrush('rack');
-      setLoadError(null);
-      setDimensionError(null);
-      clearFeedback();
-      setCreateOpen(false);
-    } catch (err) { setDimensionError(err.message); }
+    const size = SIZES.find((s) => s.id === blueprint.size);
+    const blank = blueprint.start === 'copy' && cells ? cells.map((row) => [...row]) : createBlueprintCells(size.width, size.height);
+    const draftName = blueprint.name.trim() || 'New warehouse';
+    if (unsaved && !window.confirm('Leave without saving your changes?')) return;
+    // A local draft: nothing is stored until Save.
+    setSaved({ id: DRAFT_ID, is_draft: true, is_default: false, name: draftName, width: blank[0].length, height: blank.length, cells: blank, products: [] });
+    edit({ type: 'load', cells: blank });
+    setName(draftName);
+    setSelectedId(DRAFT_ID);
+    setBrush(blueprint.start === 'copy' ? 'aisle' : 'rack');
+    clearFeedback();
+    setCreateOpen(false);
   };
 
-  const save = async (asNew) => {
-    if (!saved || loading || busy) return;
-    const createNew = asNew || saved.is_draft || saved.is_default;
-    const body = { name: name.trim() || 'Untitled layout', width: saved.width, height: saved.height, cells, products: null };
+  const save = async () => {
+    if (loading || busy) return;
+    const trimmed = trimVoid(cells);
+    if (JSON.stringify(trimmed) !== JSON.stringify(cells)) edit({ type: 'set', cells: trimmed });
+    const createNew = saved.is_draft || saved.is_default;
+    const body = { name: name.trim() || 'Untitled warehouse', width: trimmed[0].length, height: trimmed.length, cells: trimmed, products: null };
     setBusy(true);
-    setValidationError(null);
-    setErrorCells(null);
-    setUnreachable([]);
-    setSavedNotice(null);
+    clearFeedback();
     try {
       const result = createNew ? await api.createLayout(body) : await api.updateLayout(saved.id, body);
       setSaved(result);
       setName(result.name);
       edit({ type: 'load', cells: result.cells.map((row) => [...row]) });
       setSelectedId(result.id);
-      setSavedNotice(result);
-      setListVersion((value) => value + 1);
-      toast(`Saved "${result.name}". Ready to train a model or configure a simulation.`, 'success');
+      setListVersion((v) => v + 1);
+      setJustSaved(true);
+      toast(`Saved "${result.name}". Train its model to run it.`, 'success');
     } catch (err) {
-      const destinations = err.detail?.unreachable ?? [];
-      setUnreachable(destinations);
-      if (destinations.length) setErrorCells(new Set(destinations.map(([x, y]) => cellKey(x, y))));
-      setValidationError(err.message);
-      toast(err.message);
+      const unreachable = err.detail?.unreachable ?? [];
+      setErrorCells(unreachable.length ? new Set(unreachable.map(([x, y]) => cellKey(x + RING.x, y + RING.y))) : null);
+      setProblem(unreachable.length ? 'Some spots can’t be reached. Connect the red squares with floor.' : err.message);
     } finally { setBusy(false); }
   };
 
   useEffect(() => {
     const key = (event) => {
-      if (busy || loading || createOpen || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName) || !(event.ctrlKey || event.metaKey)) return;
-      if (event.key.toLowerCase() === 'z' || event.key.toLowerCase() === 'y') {
-        event.preventDefault();
-        edit({ type: event.key.toLowerCase() === 'y' || event.shiftKey ? 'redo' : 'undo' });
-        setErrorCells(null); setValidationError(null); setUnreachable([]); setSavedNotice(null);
+      if (busy || loading || createOpen || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+      if (event.ctrlKey || event.metaKey) {
+        const k = event.key.toLowerCase();
+        if (k === 'z' || k === 'y') {
+          event.preventDefault();
+          edit({ type: k === 'y' || event.shiftKey ? 'redo' : 'undo' });
+          setProblem(null); setErrorCells(null);
+        } else if (k === 's') {
+          event.preventDefault();
+          save();
+        }
+        return;
       }
+      const tool = KIT_KEYS[event.key];
+      if (tool) setBrush(tool === 'dock' ? dockKind : tool);
+      else if (event.key === 'Escape') setBrush(null);
     };
     const unload = (event) => { if (unsaved) { event.preventDefault(); event.returnValue = ''; } };
     window.addEventListener('keydown', key);
     window.addEventListener('beforeunload', unload);
     return () => { window.removeEventListener('keydown', key); window.removeEventListener('beforeunload', unload); };
-  }, [busy, loading, unsaved, createOpen]);
+  });
 
+  const savedRealLayout = saved && !saved.is_draft && !unsaved;
   return (
-    <div className="layout-editor blueprint-studio">
-      <div className="product-page-heading editor-heading">
-        <div><span className="eyebrow">Warehouse configuration</span><h1 className="view-title">Warehouse Blueprint Studio</h1><p>Design your warehouse layout, place equipment, and save it before training a navigation model.</p></div>
-        <div className="blueprint-header-actions"><span className={`badge ${unsaved ? 'badge-warn' : ''}`}>{saved?.is_draft ? 'Local draft · not saved' : unsaved ? 'Unsaved changes' : 'No pending changes'}</span><button type="button" className="clay-btn" disabled={busy} onClick={() => { setDimensionError(null); setCreateOpen(true); }}>New blueprint</button></div>
+    <div className="layout-studio">
+      <div className="studio-map">
+        {loadError ? (
+          <div className="studio-empty" role="alert">
+            <p>Couldn’t open this warehouse.</p>
+            <button type="button" className="px-btn px-small" onClick={() => { setLoadError(null); setLoadVersion((v) => v + 1); }}>Try again</button>
+          </div>
+        ) : (
+          <WarehouseMapCanvas key={selectedId} layout={loading ? null : preview} layers={NO_LAYERS} overlay minimap={false} inset={STUDIO_INSET}
+            origin={RING} activeBrush={busy || loading ? null : brush} onPaintCell={paint} errorCells={highlighted} dockGhosts />
+        )}
       </div>
-      <div className="editor-settings">
-        <label className="field">Warehouse blueprint
-          <select className="clay-select" value={selectedId} disabled={busy} onChange={(event) => {
-            if (!unsaved || window.confirm('Discard unsaved layout changes?')) {
-              setSelectedId(event.target.value); setLoadError(null); clearFeedback();
-            }
-          }}>
-            {selectedId === DRAFT_ID && <option value={DRAFT_ID}>{name} (local draft)</option>}
-            {!layouts.some((layout) => layout.id === 'default') && <option value="default">Default warehouse (built-in)</option>}
-            {saved && !saved.is_draft && saved.id !== 'default' && !layouts.some((layout) => layout.id === saved.id) && <option value={saved.id}>{saved.name}</option>}
-            {layouts.map((layout) => <option key={layout.id} value={layout.id}>{layout.name}{layout.is_default ? ' (built-in)' : ''}</option>)}
-          </select>
-        </label>
-        <label className="field blueprint-name">Name<input className="clay-input" disabled={busy || loading} maxLength={80} value={name} onChange={(event) => { setName(event.target.value); setSavedNotice(null); }} /></label>
-        <div className="blueprint-dimensions"><span className="eyebrow">Grid dimensions</span><strong>{loading ? '—' : `${saved.width} × ${saved.height}`} <span>cells</span></strong><span>Logical grid · no physical units</span></div>
-        <div className="blueprint-save-actions">
-          {saved && !saved.is_default && !saved.is_draft && <button type="button" className="clay-btn clay-btn-accent" onClick={() => save(false)} disabled={busy || loading || (!dirty && name === saved.name)}>Save changes</button>}
-          <button type="button" className={`clay-btn ${saved?.is_draft ? 'clay-btn-accent' : ''}`} onClick={() => save(true)} disabled={busy || loading}>{busy ? 'Saving…' : saved?.is_draft ? 'Save blueprint' : 'Save as new layout'}</button>
+
+      <header className="hud-glass studio-top">
+        <div className="studio-picker" ref={pickerRef}>
+          <button type="button" className="px-btn studio-picker-btn" aria-expanded={pickerOpen} onClick={() => setPickerOpen((v) => !v)} title="Switch warehouse">
+            <PixelIcon name="warehouse" /><PixelIcon name="chevron" className="studio-picker-chevron" />
+          </button>
+          {pickerOpen && (
+            <div className="studio-picker-menu hud-glass" role="menu">
+              {layouts.map((layout) => (
+                <button key={layout.id} type="button" role="menuitem" className={`studio-picker-item ${layout.id === selectedId ? 'is-current' : ''}`} onClick={() => open(layout.id)}>
+                  <span className="studio-picker-name">{layout.name}</span>
+                  {layout.is_default && <span className="studio-tag">built-in</span>}
+                  <ModelBadge status={layout.model_status} compact />
+                </button>
+              ))}
+              <button type="button" role="menuitem" className="studio-picker-item studio-picker-new" onClick={() => { setPickerOpen(false); setCreateOpen(true); }}>
+                <PixelIcon name="plus" /> New warehouse
+              </button>
+            </div>
+          )}
         </div>
-      </div>
-      <div className="editor-brushes">
-        <MapPaintToolbar resetLabel={saved?.is_draft ? 'Clear draft floor' : 'Reset to saved'} activeBrush={busy || loading ? null : brush} onSelectBrush={setBrush} disabled={!cells || busy || loading} onReset={() => { edit({ type: 'replace', cells: saved.cells.map((row) => [...row]) }); clearFeedback(); }} />
-        <div className="bar-group blueprint-history" role="group" aria-label="Blueprint edit history">
-          <button type="button" className="clay-btn clay-pill-sm" disabled={!history.past.length || busy || loading} onClick={() => changeHistory('undo')} title="Undo stroke (Ctrl/Cmd+Z)">Undo</button>
-          <button type="button" className="clay-btn clay-pill-sm" disabled={!history.future.length || busy || loading} onClick={() => changeHistory('redo')} title="Redo stroke (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y)">Redo</button>
-          <span className="micro-copy">One undo step per drag stroke</span>
+        <input className="studio-name" value={name} disabled={busy || loading} maxLength={80} aria-label="Warehouse name"
+          onChange={(event) => { setName(event.target.value); setJustSaved(false); }} />
+        {saved?.is_default && <span className="studio-tag" title="The built-in warehouse never changes. Saving makes your own copy.">built-in</span>}
+        <span className={`studio-dirty ${unsaved ? 'is-on' : ''}`} title={unsaved ? 'Unsaved changes' : 'All saved'} />
+        <div className="studio-top-actions">
+          <button type="button" className="px-btn px-small px-icon-btn" disabled={!history.past.length || busy || loading} onClick={() => changeHistory('undo')} title="Undo (Ctrl+Z)" aria-label="Undo"><PixelIcon name="undo" /></button>
+          <button type="button" className="px-btn px-small px-icon-btn" disabled={!history.future.length || busy || loading} onClick={() => changeHistory('redo')} title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><PixelIcon name="redo" /></button>
+          <button type="button" className="px-btn px-small px-primary" disabled={busy || loading || !unsaved} onClick={save} title="Save (Ctrl+S)">
+            <PixelIcon name="save" />{busy ? 'Saving…' : saved?.is_default ? 'Save copy' : 'Save'}
+          </button>
         </div>
-      </div>
-      <div className="blueprint-readiness" hidden={loading} aria-label="Equipment inventory">
-        <span>{counts.rack} rack cells · {counts.aisle} aisle cells · {preview?.pick_faces.length ?? 0} pick faces</span>
-        {[['packing', 'Packing'], ['charger', 'Charging'], ['dock', 'Shipping']].map(([kind, label]) => <span key={kind} className={counts[kind] ? 'equipment-present' : 'equipment-missing'}>{counts[kind] ? '✓' : '○'} {label}: {counts[kind]}</span>)}
-        <span>At least one of each station type is required; keep routes connected.</span>
-      </div>
-      <p className="editor-note">{saved?.is_default ? 'The built-in warehouse is preserved: use Save as new layout for your edits. ' : ''}Drag to paint continuous rows; use Walkable aisles to erase. Racks block movement but remain storage—custom wall or obstacle types are not supported. Products are assigned to pick faces when saved.</p>
-      {savedNotice && <div className="blueprint-next-step" role="status"><div><strong>Blueprint saved: {savedNotice.name}</strong><p>{savedNotice.width} × {savedNotice.height} cells · Next, configure robots and navigation. Shortest-path navigation needs no training; train a model only to use learned routes.</p></div>{onUseLayout && <div className="bar-group"><button className="clay-btn clay-pill-sm" type="button" onClick={() => onUseLayout(savedNotice.id, 'models')}>Train AI (optional)</button><button className="clay-btn clay-pill-sm" type="button" onClick={() => onUseLayout(savedNotice.id, 'session')}>Configure simulation</button></div>}</div>}
-      {validationError && <div className="inline-error" role="alert"><strong>Blueprint could not be saved.</strong> {validationError}{unreachable.length > 0 && <p>Destinations {unreachable.map(([x, y]) => coordLabel(x, y)).join(', ')} cannot be reached from the chargers and are marked in red. Paint walkable aisles to connect them, then save again.</p>}</div>}
-      {listError && <div className="inline-error" role="alert">Saved warehouse list unavailable: {listError} <button type="button" className="clay-btn clay-pill-sm" onClick={() => setListVersion((value) => value + 1)}>Retry list</button></div>}
-      {loadError && <div className="inline-error" role="alert">Unable to load this layout: {loadError} <button type="button" className="clay-btn clay-pill-sm" onClick={() => { setLoadError(null); setLoadVersion((value) => value + 1); }}>Retry layout</button></div>}
-      <div className="blueprint-map"><WarehouseMapCanvas key={selectedId} layout={loading ? null : preview} layers={NO_LAYERS} activeBrush={busy || loading ? null : brush} onPaintCell={paint} errorCells={errorCells} /></div>
-      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} title="New warehouse blueprint">
-        <form onSubmit={createDraft} className="blueprint-create-form">
-          <p>Start with an empty walkable floor, then place storage and equipment. Existing warehouses are not resized or overwritten.</p>
-          <label className="field">Warehouse name<input className="clay-input" required maxLength={80} value={blueprint.name} onChange={(event) => setBlueprint({ ...blueprint, name: event.target.value })} /></label>
-          <div className="field-row">{[['width', 'Width'], ['height', 'Height']].map(([key, label]) => <label className="field" key={key}>{label} (cells)<input type="number" className="clay-input" required min={4} max={40} step={1} value={blueprint[key]} onChange={(event) => setBlueprint({ ...blueprint, [key]: event.target.value })} /><span className="field-hint">4–40 whole cells</span></label>)}</div>
-          <p className="micro-copy">Dimensions describe logical cells only. Meters, feet, imported floor plans, and physical equipment sizes are not supported.</p>
-          {dimensionError && <div className="inline-error" role="alert">{dimensionError}</div>}
-          <div className="blueprint-dialog-actions"><button type="button" className="clay-btn" onClick={() => setCreateOpen(false)}>Cancel</button><button type="submit" className="clay-btn clay-btn-accent">Create local draft</button></div>
+      </header>
+
+      <BuildKit brush={busy || loading ? null : brush} onBrush={setBrush} dockKind={dockKind} onDockKind={setDockKind}
+        counts={counts} disabled={busy || loading} />
+
+      <footer className={`hud-glass studio-status ${problem ? 'has-problem' : ''}`}>
+        {problem ? (
+          <span className="studio-problem" role="alert">{problem}</span>
+        ) : (
+          <>
+            <span className="studio-size" title="Floor size in squares">{cells ? `${cells[0].length}×${cells.length}` : '—'}</span>
+            {NEEDS.map(([kind, label]) => (
+              <span key={kind} className={`studio-need ${met(kind) ? 'is-met' : ''}`}
+                title={(strandedKinds.has(kind) || (kind === 'dock' && strandedKinds.has('shipping'))) ? `Every ${label === 'Dock' ? 'drop-off' : label.toLowerCase()} zone must touch the outside edge of the warehouse` : placed(kind) ? `${placed(kind)} placed` : `Add at least one ${label.toLowerCase()}`}>{label}</span>
+            ))}
+            <span className="studio-spots" title="Floor squares next to a rack, where robots pick products">{spots} pick spots</span>
+          </>
+        )}
+        <span className="studio-divider" />
+        <ModelBadge status={status} />
+        {savedRealLayout && status !== 'ready' && onUseLayout && (
+          <button type="button" className={`px-btn px-small px-primary ${justSaved ? 'studio-nudge' : ''}`} onClick={() => onUseLayout(saved.id, 'models')}>
+            <PixelIcon name="brain" /> Train
+          </button>
+        )}
+        {savedRealLayout && status === 'ready' && onUseLayout && (
+          <button type="button" className="px-btn px-small" onClick={() => onUseLayout(saved.id, 'session')}><PixelIcon name="play" /> Run</button>
+        )}
+        {!savedRealLayout && missing.length === 0 && <span className="studio-hint">Save, then train</span>}
+      </footer>
+
+      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} title="New warehouse" pixel className="setup-dialog studio-create">
+        <form onSubmit={createDraft} className="simulation-setup">
+          <BlueprintPreview size={SIZES.find((s) => s.id === blueprint.size)} copy={blueprint.start === 'copy' ? cells : null} />
+          <input className="setup-name" value={blueprint.name} maxLength={80} aria-label="Warehouse name" placeholder="New warehouse"
+            onChange={(event) => setBlueprint({ ...blueprint, name: event.target.value })} />
+          <div className="setup-row">
+            <span className="setup-label">Start</span>
+            <PixelChoice name="start" legend="Start from" value={blueprint.start} onChange={(start) => setBlueprint({ ...blueprint, start })}
+              options={[{ id: 'empty', label: 'Empty floor' }, { id: 'copy', label: 'Copy this one', disabled: !cells }]} />
+          </div>
+          {blueprint.start === 'empty' && (
+            <div className="setup-row">
+              <span className="setup-label">Size</span>
+              <PixelChoice name="size" legend="Size" value={blueprint.size} onChange={(size) => setBlueprint({ ...blueprint, size })}
+                options={SIZES.map((s) => ({ ...s, tag: `${s.width}×${s.height}` }))} />
+            </div>
+          )}
+          <p className="setup-hint">Any shape works: grow or cut the floor while you edit, up to {MAX_SIDE}×{MAX_SIDE}.</p>
+          <div className="setup-footer">
+            <span className="setup-summary" />
+            <button type="button" className="px-btn" onClick={() => setCreateOpen(false)}>Cancel</button>
+            <button type="submit" className="px-btn px-primary setup-go"><PixelIcon name="plus" />Create</button>
+          </div>
         </form>
       </Dialog>
+    </div>
+  );
+}
+
+// A tiny pixel floor plan of the warehouse about to be made.
+function BlueprintPreview({ size, copy }) {
+  const grid = copy ?? Array.from({ length: Math.max(MIN_SIDE, size.height) }, () => Array(size.width).fill('aisle'));
+  const w = grid[0].length;
+  const h = grid.length;
+  return (
+    <div className="studio-blueprint" aria-hidden="true">
+      <svg viewBox={`-0.5 -0.5 ${w + 1} ${h + 1}`} shapeRendering="crispEdges" style={{ aspectRatio: `${w + 1} / ${h + 1}` }}>
+        {grid.flatMap((row, y) => row.map((kind, x) => (kind === 'void' ? null : (
+          <rect key={`${x},${y}`} x={x + 0.06} y={y + 0.06} width={0.88} height={0.88} className={`bp-${kind}`} style={{ '--d': `${(x + y) * 12}ms` }} />
+        ))))}
+      </svg>
     </div>
   );
 }

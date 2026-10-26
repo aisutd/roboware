@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { NAVIGATION_MODES, trainingGuidance } from '../lib/navigation';
+import { NAVIGATION_MODES } from '../lib/navigation';
 import { ROBOT_COLORS } from '../lib/pet';
 import { api } from '../services/api';
 import { Dialog } from './Dialog';
+import { PixelChoice } from './PixelChoice';
 import { PixelIcon } from './PixelIcon';
 import { RobotPet } from './RobotPet';
 import { useToast } from './toastContext';
@@ -27,20 +28,6 @@ const LENGTHS = [
 ];
 const MAX_ROBOTS = ROBOT_COLORS.length;
 
-// A row of pixel radio buttons; the checked one lights up.
-function Choice({ name, options, value, onChange, legend }) {
-  return (
-    <div className="setup-choice" role="radiogroup" aria-label={legend}>
-      {options.map((option) => (
-        <label key={option.id} className="setup-choice-item">
-          <input type="radio" name={name} value={option.id} checked={value === option.id} onChange={() => onChange(option.id)} />
-          <span className="setup-choice-face">{option.tag && <b className="setup-choice-tag">{option.tag}</b>}{option.label}</span>
-        </label>
-      ))}
-    </div>
-  );
-}
-
 // The fleet about to launch, drawn as the pixel pets that will appear on the floor.
 function CrewPreview({ count }) {
   return (
@@ -58,35 +45,34 @@ export function NewSessionDialog({ open, onClose, onCreated, initialLayoutId = n
   const toast = useToast();
   const [form, setForm] = useState(() => ({ ...DEFAULTS, ...initialDraft, layout_id: initialLayoutId ?? initialDraft?.layout_id ?? 'default', model_id: initialModelId ?? initialDraft?.model_id ?? '', routing_mode: initialDraft?.routing_mode ?? (initialModelId ? 'hybrid' : DEFAULTS.routing_mode) }));
   const [layouts, setLayouts] = useState([]);
-  const [models, setModels] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!open) return undefined;
     let cancelled = false;
-    Promise.all([api.listLayouts(), api.listModels()])
-      .then(([l, m]) => {
-        if (!cancelled) {
-          setLayouts(l);
-          setModels(m);
-        }
+    api.listLayouts()
+      .then((l) => {
+        if (cancelled) return;
+        setLayouts(l);
+        // Only trained warehouses can run; start on one unless a specific warehouse was handed over.
+        const firstReady = l.find((x) => x.model_status === 'ready');
+        if (!initialLayoutId && firstReady) setForm((f) => (l.find((x) => x.id === f.layout_id)?.model_status === 'ready' ? f : { ...f, layout_id: firstReady.id }));
       })
       .catch((e) => { if (!cancelled) { setError(e.message); toast(e.message); } });
     return () => { cancelled = true; };
-  }, [open, toast]);
+  }, [open, toast, initialLayoutId]);
 
   if (!open) return null;
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
   const patch = (values) => setForm({ ...form, ...values });
-  const layoutModels = models.filter((m) => m.layout_id === form.layout_id);
-  const selectedModel = layoutModels.find((model) => model.id === form.model_id);
+  // Every warehouse runs with its own trained model.
+  const warehouse = layouts.find((l) => l.id === form.layout_id);
+  const ready = warehouse?.model_status === 'ready';
   const navigation = NAVIGATION_MODES.find((mode) => mode.id === form.routing_mode);
-  const guidance = trainingGuidance(form.routing_mode, selectedModel);
   const robots = Math.min(MAX_ROBOTS, Math.max(1, Number(form.robot_count) || 1));
   const traffic = TRAFFIC.find((t) => t.rate === Number(form.rate_per_100) && t.rush === Number(form.rush_fraction));
   const length = LENGTHS.find((l) => l.type === form.stop_type && (l.type === 'manual' || l.value === Number(form.stop_value)));
-  const learned = form.routing_mode !== 'astar';
   const stopText = form.stop_type === 'manual' ? 'no time limit' : `${form.stop_value} ${form.stop_type === 'ticks' ? 'steps' : 'deliveries'}`;
 
   const submit = async (e) => {
@@ -97,7 +83,7 @@ export function NewSessionDialog({ open, onClose, onCreated, initialLayoutId = n
       const created = await api.createSession({
         name: form.name,
         layout_id: form.layout_id,
-        model_id: form.model_id || null,
+        model_id: warehouse?.model_id ?? null,
         routing_mode: form.routing_mode,
         robot_count: robots,
         orders: {
@@ -107,7 +93,7 @@ export function NewSessionDialog({ open, onClose, onCreated, initialLayoutId = n
           size_weights: [Number(form.size_1), Number(form.size_2), Number(form.size_3)],
         },
         stop: { type: form.stop_type, value: form.stop_type === 'manual' ? null : Number(form.stop_value) },
-        online_learning: Boolean(form.online_learning && form.model_id),
+        online_learning: Boolean(form.online_learning),
       });
       created.warnings?.forEach((w) => toast(w, 'info'));
       onCreated(created.id);
@@ -127,8 +113,19 @@ export function NewSessionDialog({ open, onClose, onCreated, initialLayoutId = n
 
         <div className="setup-row">
           <span className="setup-label">Warehouse</span>
-          <Choice name="layout_id" legend="Warehouse" value={form.layout_id} onChange={(id) => patch({ layout_id: id, model_id: '' })}
-            options={(layouts.length ? layouts : [{ id: form.layout_id, name: 'Default warehouse' }]).map((l) => ({ id: l.id, label: l.name }))} />
+          <div className="setup-stack">
+            <PixelChoice name="layout_id" legend="Warehouse" value={form.layout_id} onChange={(id) => patch({ layout_id: id })}
+              options={(layouts.length ? layouts : [{ id: form.layout_id, name: 'Default warehouse', model_status: 'ready' }]).map((l) => ({
+                id: l.id, label: l.name, icon: l.model_status === 'ready' ? null : 'lock',
+                title: l.model_status === 'ready' ? 'Trained and ready' : 'Needs its model trained before it can run',
+              }))} />
+            {layouts.length > 0 && !ready && (
+              <p className="setup-warn">
+                {warehouse?.model_status === 'outdated' ? 'This floor changed since it was trained.' : 'This warehouse hasn’t been trained yet.'}
+                {onTrainRequested && <button type="button" className="setup-link" onClick={() => onTrainRequested(form.layout_id, null, { ...form })}>Train it</button>}
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="setup-row">
@@ -143,35 +140,21 @@ export function NewSessionDialog({ open, onClose, onCreated, initialLayoutId = n
         <div className="setup-row">
           <span className="setup-label">Routing</span>
           <div className="setup-stack">
-            <Choice name="routing_mode" legend="Navigation method" value={form.routing_mode} onChange={(id) => patch({ routing_mode: id })}
+            <PixelChoice name="routing_mode" legend="Navigation method" value={form.routing_mode} onChange={(id) => patch({ routing_mode: id })}
               options={NAVIGATION_MODES.map((mode) => ({ id: mode.id, label: mode.short, tag: mode.tag }))} />
             <p className="setup-hint" key={form.routing_mode}>{navigation.blurb}</p>
-            {learned && (
-              <div className={`setup-model ${guidance.needsTraining ? 'needs-training' : ''}`}>
-                <select className="setup-select" value={form.model_id} onChange={set('model_id')} aria-label="AI model">
-                  <option value="">No AI model</option>
-                  {layoutModels.map((model) => <option key={model.id} value={model.id}>{model.name} · {model.trained_destinations} destinations</option>)}
-                </select>
-                {guidance.needsTraining && (
-                  <p className="setup-warn">
-                    {selectedModel ? 'This model has not learned any routes yet.' : 'Pick a trained model, or this run uses shortest path.'}
-                    {onTrainRequested && <button type="button" className="setup-link" onClick={() => onTrainRequested(form.layout_id, form.model_id || null, { ...form })}>Train one</button>}
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         </div>
 
         <div className="setup-row">
           <span className="setup-label">Orders</span>
-          <Choice name="traffic" legend="Order traffic" value={traffic?.id} options={TRAFFIC}
+          <PixelChoice name="traffic" legend="Order traffic" value={traffic?.id} options={TRAFFIC}
             onChange={(id) => { const t = TRAFFIC.find((x) => x.id === id); patch({ rate_per_100: t.rate, rush_fraction: t.rush }); }} />
         </div>
 
         <div className="setup-row">
           <span className="setup-label">Length</span>
-          <Choice name="length" legend="Run length" value={length?.id} options={LENGTHS}
+          <PixelChoice name="length" legend="Run length" value={length?.id} options={LENGTHS}
             onChange={(id) => { const l = LENGTHS.find((x) => x.id === id); patch({ stop_type: l.type, stop_value: l.value }); }} />
         </div>
 
@@ -206,7 +189,7 @@ export function NewSessionDialog({ open, onClose, onCreated, initialLayoutId = n
               )}
             </div>
             <label className="check">
-              <input type="checkbox" checked={form.online_learning} onChange={set('online_learning')} disabled={!form.model_id} />
+              <input type="checkbox" checked={form.online_learning} onChange={set('online_learning')} />
               Keep learning during the session (saves a new model version)
             </label>
           </div>
@@ -214,9 +197,9 @@ export function NewSessionDialog({ open, onClose, onCreated, initialLayoutId = n
 
         {error && <div className="inline-error" role="alert">{error}</div>}
         <div className="setup-footer">
-          <p className="setup-summary" title="Your setup at a glance">{robots} robots · {navigation.tag} · {(traffic?.label ?? 'Custom').toLowerCase()} orders · {stopText}</p>
+          <p className="setup-summary" title="Your setup at a glance">{robots} robots · {navigation.short.toLowerCase()} · {(traffic?.label ?? 'Custom').toLowerCase()} orders · {stopText}</p>
           <button type="button" className="px-btn" onClick={onClose}>Cancel</button>
-          <button type="submit" className="px-btn px-primary setup-go" disabled={busy}><PixelIcon name="play" />{busy ? 'Starting…' : 'Create'}</button>
+          <button type="submit" className="px-btn px-primary setup-go" disabled={busy || (layouts.length > 0 && !ready)}><PixelIcon name="play" />{busy ? 'Starting…' : 'Create'}</button>
         </div>
         <p className="setup-notice">Simulation only. Nothing here controls real robots.</p>
       </form>

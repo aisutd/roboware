@@ -18,6 +18,11 @@ const SFX = {
   select: (e, t) => { e.tone(79, t, 0.035, 0.05); e.tone(86, t + 0.045, 0.05, 0.05); },
   // A robot "talking": three quick soft blips, sung at that robot's own pitch.
   chatter: (e, t) => [0, 3, -2].forEach((step, i) => e.tone(76 + step, t + i * 0.065, 0.045, 0.035, 'square')),
+  // Receiving: a two-tone truck horn, reversing beeps, a wooden pallet thunk and a bright restock chime.
+  horn: (e, t) => { [50, 54].forEach((n) => e.tone(n, t, 0.22, 0.05, 'sawtooth')); [50, 54].forEach((n) => e.tone(n, t + 0.28, 0.32, 0.05, 'sawtooth')); },
+  reverse: (e, t) => [0, 0.36, 0.72].forEach((d) => e.tone(95, t + d, 0.16, 0.035, 'square')),
+  pallet: (e, t) => { e.tone(43, t, 0.09, 0.09, 'triangle', 36); e.tone(60, t + 0.01, 0.04, 0.03, 'square', 50); },
+  restock: (e, t) => [79, 84, 91, 96].forEach((n, i) => e.tone(n, t + i * 0.05, 0.08, 0.05, 'triangle')),
 };
 
 // Saved Music / SFX switches (see useAudioPrefs), so they apply in every view from the start.

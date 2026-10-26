@@ -1,5 +1,6 @@
 // Live session state over WebSocket: a pure reducer plus a reconnecting client.
 import { chatterFrom, trailsFrom } from '../lib/chatter';
+import { scheduleVans } from '../lib/shipments';
 
 export const initialSessionState = {
   connected: false,
@@ -11,6 +12,8 @@ export const initialSessionState = {
   orders: [],
   stations: [],
   stock: {},
+  // Delivery trucks, pallets on the unload bays and restock totals (see backend receiving.py).
+  receiving: null,
   stats: null,
   events: [],
   recentEvents: [],
@@ -21,11 +24,13 @@ export const initialSessionState = {
   robotChatter: {},
   robotReactions: {},
   robotTrails: {},
+  // Vans driving away from drop-off zones ({ id, door, side, tick, delay }); see lib/shipments.js.
+  shipments: [],
   error: null,
 };
 
 const MAX_RECENT_EVENTS = 50;
-const CHEER_EVENTS = new Set(['picked', 'packed', 'delivered', 'charged']);
+const CHEER_EVENTS = new Set(['picked', 'packed', 'delivered', 'charged', 'restocked']);
 
 function cheersFrom(events, tick, previous) {
   let next = previous;
@@ -46,6 +51,7 @@ function pickFrame(m) {
     orders: m.orders ?? [],
     stations: m.stations ?? [],
     stock: m.stock ?? {},
+    receiving: m.receiving ?? null,
     stats: m.stats ?? null,
     events: m.events ?? [],
   };
@@ -60,7 +66,7 @@ export function sessionReducer(state, message) {
     case 'snapshot':
       return {
         ...state, ...pickFrame(message), session: message.session, layout: message.layout, recentEvents: [],
-        robotCheers: {}, robotChatter: {}, robotReactions: {}, robotTrails: {},
+        robotCheers: {}, robotChatter: {}, robotReactions: {}, robotTrails: {}, shipments: [],
         metricSamples: message.stats ? [{ ...message.stats, tick: message.tick ?? 0 }] : [], error: null,
       };
     case 'frame': {
@@ -83,6 +89,7 @@ export function sessionReducer(state, message) {
           ? { ...state.robotReactions, ...Object.fromEntries(reactions.map((id) => [id, tick])) }
           : state.robotReactions,
         robotTrails: trailsFrom(state.robotTrails, state.robots, robots, tick),
+        shipments: scheduleVans(state.shipments, message.events ?? [], tick, state.layout),
         metricSamples: sample ? [...samples, { ...message.stats, tick }].slice(-100) : samples,
       };
     }

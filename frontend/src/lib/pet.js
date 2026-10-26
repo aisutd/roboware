@@ -18,7 +18,7 @@ export const PET_LEGS_B = pixels([[4, 6], [4, 7], [9, 6], [9, 7]]);
 
 const EYE_X = [3, 8];
 const GLANCE = { 0: [1, 0], 90: [0, 1], 180: [-1, 0], 270: [0, -1] };
-const WALKING = new Set(['to_pick', 'to_pack', 'to_dock', 'to_charger', 'parking']);
+const WALKING = new Set(['to_pick', 'to_pack', 'to_dock', 'to_charger', 'parking', 'to_unload', 'to_shelf']);
 
 // How long (in ticks) a robot stays happy after picking, packing, delivering or finishing a charge.
 export const CHEER_TICKS = 3;
@@ -36,7 +36,7 @@ export function petMood(robot, cheer, tick) {
   if (robot.status === 'charging') return 'charge';
   if (robot.yielding) return 'surprised';
   if (robot.battery <= 20) return 'tired';
-  if (robot.status === 'picking' || robot.status === 'packing') return 'focus';
+  if (['picking', 'packing', 'loading', 'restocking'].includes(robot.status)) return 'focus';
   if (isWalking(robot)) return 'walk';
   if (isSnoozing(robot)) return 'snooze';
   return 'idle';

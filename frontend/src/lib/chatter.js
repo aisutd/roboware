@@ -18,12 +18,14 @@ const LINES = {
   reroute: ['rerouting…', 'hmm, detour', 'plan B'],
   yield: ['after you!', 'oops, sorry', 'you first'],
   thanks: ['thanks!', 'cheers!', 'ty!'],
+  lifted: ['heavy!', 'hup!', 'oof, pallet', 'got the load'],
+  restocked: ['restocked!', 'shelf full', 'fresh stock!', 'all topped up'],
 };
 // Percent chance a robot speaks for each kind of moment (yields always get a reaction).
-const CHANCE = { assigned: 40, picked: 35, packed: 35, delivered: 60, low: 80, charged: 50, reroute: 70, yield: 100, thanks: 100 };
+const CHANCE = { assigned: 40, picked: 35, packed: 35, delivered: 60, low: 80, charged: 50, reroute: 70, yield: 100, thanks: 100, lifted: 50, restocked: 60 };
 const EVENT_KINDS = {
   order_assigned: 'assigned', picked: 'picked', packed: 'packed', delivered: 'delivered',
-  to_charger: 'low', charged: 'charged', fallback: 'reroute',
+  to_charger: 'low', charged: 'charged', fallback: 'reroute', pallet_loaded: 'lifted', restocked: 'restocked',
 };
 
 const roll = (robotId, tick, kind) => hashString(`${robotId}:${tick}:${kind}`) % 100;

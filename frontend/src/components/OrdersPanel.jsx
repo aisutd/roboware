@@ -170,13 +170,15 @@ export function OrdersPanel({
           const robot = robotsById[order.robot_id];
           const mine = !finished(order) && robot && robot.id === selectedRobotId;
           return (
-            <article key={order.id} className={`ticket ${order.priority === 'rush' ? 'ticket-rush' : ''} ${mine ? 'ticket-selected' : ''}`}
+            <article key={order.id} className={`ticket ${order.priority === 'rush' ? 'ticket-rush' : ''} ${mine ? 'ticket-selected' : ''} ${order.waiting_stock ? 'ticket-awaiting' : ''}`}
               data-order-id={order.id} data-status={order.status} style={robot ? { '--robot': robot.color } : undefined}>
               <div className="ticket-main">
                 <div className="ticket-head">
                   <span className="ticket-id">{order.id.replace('ORD-', '#')}</span>
                   {order.priority === 'rush' && <span className="ticket-badge">Rush</span>}
-                  <span className="ticket-state">{order.status === 'failed' ? 'Failed' : WAITING[order.status] ?? ''}</span>
+                  {order.waiting_stock && order.status === 'queued'
+                    ? <span className="ticket-waiting" title="Out of stock. A delivery truck is bringing more."><PixelIcon name="truck" /> Awaiting truck</span>
+                    : <span className="ticket-state">{order.status === 'failed' ? 'Failed' : WAITING[order.status] ?? ''}</span>}
                 </div>
                 <div className="ticket-items">
                   {order.items.map((i) => `${i.qty}× ${productNames[i.sku] ?? i.sku}`).join(', ')}

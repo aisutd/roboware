@@ -85,6 +85,9 @@ class TrainingJobManager:
         job.status, job.started_at = "running", now()
         try:
             row, _, qtables, histories = load_model(self.storage, job.model_id)
+            if row["layout_fingerprint"] != layout.fingerprint():
+                # The warehouse floor changed since this model learned it: start over on the new floor.
+                qtables, histories = None, {}
 
             def progress(done: int, _total: int, dest: Cell, history: dict) -> None:
                 job.done, job.current = done, dest
@@ -93,7 +96,7 @@ class TrainingJobManager:
             qtables, new_histories = train_model(layout, hp, dests, seed, qtables, progress)
             histories.update(new_histories)
             self.storage.save_model_file(job.model_id, export_model(model_meta(row), hp, qtables, histories))
-            self.storage.update_model_after_training(job.model_id, len(qtables), hp.to_dict())
+            self.storage.update_model_after_training(job.model_id, len(qtables), hp.to_dict(), layout.fingerprint())
             job.status = "completed"
         except Exception as exc:  # report any failure on the job; the saved model is untouched
             log.exception("training job %s failed", job.id)

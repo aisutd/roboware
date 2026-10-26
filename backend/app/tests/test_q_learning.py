@@ -86,7 +86,7 @@ def test_train_model_reports_progress_and_continues_existing_tables():
 def test_default_train_model_covers_all_destinations():
     layout = default_layout()
     qt, hist = train_model(layout, Hyperparameters(episodes_per_destination=5))
-    assert len(qt) == 29 and len(hist) == 29
+    assert len(qt) == 38 and len(hist) == 38
 
 
 def test_export_import_roundtrip_is_exact():
