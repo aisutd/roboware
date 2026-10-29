@@ -1,6 +1,11 @@
 import { useLayoutEffect, useRef } from 'react';
-import { PET_BODY, PET_LEGS_A, PET_LEGS_B } from '../lib/pet';
+import { pixelPath } from '../lib/pixelArt';
 import { PixelIcon } from './PixelIcon';
+
+// The droid's head for the logo: antenna, rounded shell and a visor with two eyes.
+const LOGO_HEAD = pixelPath(['......BB......', '.......B......', '..BBBBBBBBBB..', '.BBBBBBBBBBBB.', '.BBBBBBBBBBBB.', '.BBBBBBBBBBBB.',
+  '.BBBBBBBBBBBB.', '.BBBBBBBBBBBB.', '..BBBBBBBBBB..', '.....BBBB.....', '...BBBBBBBB...', '...BBBBBBBB...']);
+const LOGO_VISOR = pixelPath(['.VVVVVVVV.', 'VVVVVVVVVV', 'VVVVVVVVVV', '.VVVVVVVV.'], 'V');
 
 const VIEWS = [
   { id: 'session', label: 'Session', icon: 'play' },
@@ -9,12 +14,13 @@ const VIEWS = [
   { id: 'history', label: 'History', icon: 'clock' },
 ];
 
-// The app logo: an amber pixel pet that blinks now and then.
+// The app logo: an amber warehouse droid's head whose visor eyes blink now and then.
 function BrandPet() {
   return (
-    <svg className="brand-pet" viewBox="-1 -3 14 14" shapeRendering="crispEdges" aria-hidden="true">
-      <path d={`${PET_BODY}${PET_LEGS_A}${PET_LEGS_B}`} />
-      <g className="brand-pet-eyes"><rect x="3" y="1" width="1" height="1" /><rect x="8" y="1" width="1" height="1" /></g>
+    <svg className="brand-pet" viewBox="-1 -1 16 14" shapeRendering="crispEdges" aria-hidden="true">
+      <path d={LOGO_HEAD} />
+      <path d={LOGO_VISOR} transform="translate(2 3)" fill="#0d1217" />
+      <g className="brand-pet-eyes" style={{ fill: '#f0c06a' }}><rect x="4" y="4" width="2" height="2" /><rect x="8" y="4" width="2" height="2" /></g>
     </svg>
   );
 }
