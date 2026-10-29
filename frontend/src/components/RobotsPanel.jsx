@@ -1,59 +1,84 @@
-import { batteryColor } from '../lib/battery';
-import { ACTION_ARROWS, ACTIONS, coordLabel } from '../lib/grid';
+import { coordLabel } from '../lib/grid';
+import { isSnoozing } from '../lib/pet';
+import { STAGE_ICONS } from '../lib/pixelArt';
+import { PixelIcon } from './PixelIcon';
+import { RobotPet } from './RobotPet';
 import { Window } from './Window';
 
 const STATUS_TEXT = {
-  idle: 'Idle', parking: 'Parking', to_pick: 'Going to shelf', picking: 'Picking', to_pack: 'Going to packing',
-  queued_pack: 'Waiting to pack', packing: 'Packing', to_dock: 'Going to dock', to_charger: 'Going to charge', charging: 'Charging',
+  idle: 'Idle', parking: 'Parking', to_pick: 'To shelf', picking: 'Picking', to_pack: 'To packing',
+  queued_pack: 'Waiting to pack', packing: 'Packing', to_dock: 'To dock', to_charger: 'To charger', charging: 'Charging',
+  to_unload: 'To the truck', loading: 'Lifting pallet', to_shelf: 'Hauling stock', restocking: 'Restocking',
 };
-const PAD = { up: [1, 2], left: [2, 1], right: [2, 3], down: [3, 2] };
+const BATTERY_SEGMENTS = 5;
 
-function RobotDetail({ robot, productNames }) {
-  const q = robot.q_scores;
-  const best = q ? Math.max(...ACTIONS.map((a) => q[a])) : null;
+const batteryTone = (level) => (level > 50 ? 'good' : level > 20 ? 'low' : 'critical');
+
+// An 8-bit battery: five cells that empty as the robot works.
+function PixelBattery({ level }) {
+  const lit = Math.ceil((Math.max(0, Math.min(100, level)) / 100) * BATTERY_SEGMENTS);
+  return (
+    <span className={`pixel-battery battery-${batteryTone(level)}`} title={`Battery ${Math.round(level)}%`}>
+      <span className="pixel-battery-cells">
+        {Array.from({ length: BATTERY_SEGMENTS }, (_, i) => <span key={i} className={i < lit ? 'on' : ''} />)}
+      </span>
+      <span className="pixel-battery-value">{Math.round(level)}%</span>
+    </span>
+  );
+}
+
+// The robot's current order, in the same stage colour and icon as its ticket in the Orders tab.
+function OrderTag({ orderId, status }) {
+  const stage = STAGE_ICONS[status] ? status : 'picking';
+  return (
+    <span className={`fleet-order stage-${stage} ${STAGE_ICONS[status] ? 'on' : ''}`} title={`Working on ${orderId} (${status ?? 'assigned'})`}>
+      <svg viewBox="0 0 7 7" shapeRendering="crispEdges" aria-hidden="true"><path d={STAGE_ICONS[stage]} /></svg>
+      {orderId.replace('ORD-', '#')}
+    </span>
+  );
+}
+
+function RobotChips({ robot, productNames }) {
   const load = robot.package_id ? `Package ${robot.package_id}`
     : robot.carrying?.length ? robot.carrying.map((i) => `${i.qty}× ${productNames[i.sku] ?? i.sku}`).join(', ')
-      : 'Empty';
+      : null;
   return (
-    <div className="robot-detail">
-      {q && (
-        <div className="q-pad" title="Q-values at this cell; the best move is highlighted">
-          {ACTIONS.map((a) => (
-            <div key={a} className={q[a] === best ? 'best' : ''} style={{ gridRow: PAD[a][0], gridColumn: PAD[a][1] }}>
-              {ACTION_ARROWS[a]} {q[a]}
-            </div>
-          ))}
-        </div>
-      )}
-      <div style={{ lineHeight: 1.6, minWidth: 0 }}>
-        <div style={{ color: 'var(--ink)', fontWeight: 650 }}>
-          {coordLabel(robot.x, robot.y)}{robot.target && ` to ${coordLabel(robot.target[0], robot.target[1])}`}
-        </div>
-        <div>{load}</div>
-        <div>{Math.round(robot.battery)}% battery</div>
-        {robot.fallback_leg && <span className="badge badge-warn">A* fallback</span>}
-      </div>
+    <div className="fleet-chips">
+      {!robot.order_id && <span className="fleet-chip">No order</span>}
+      {robot.target && <span className="fleet-chip">→ {coordLabel(robot.target[0], robot.target[1])}</span>}
+      {load && <span className="fleet-chip fleet-chip-load">{load}</span>}
+      {robot.fallback_leg && <span className="fleet-chip fleet-chip-warn">A* fallback</span>}
     </div>
   );
 }
 
-export function RobotsPanel({ robots, selectedRobotId, onSelectRobot, productNames }) {
-  const selected = robots.find((r) => r.id === selectedRobotId) ?? robots[0];
+export function RobotsPanel({ robots, selectedRobotId, onSelectRobot, productNames, robotCheers, tick, orders = [], collapsed = false, onToggle, robotNames = {} }) {
+  const selected = robots.find((r) => r.id === selectedRobotId);
+  const orderStatus = Object.fromEntries(orders.map((o) => [o.id, o.status]));
   return (
-    <Window title="Robots" style={{ flex: '0 1 auto' }} bodyStyle={{ padding: 0 }}>
-      {robots.map((robot) => (
-        <div key={robot.id}>
-          <button type="button" className={`robot-row ${robot.id === selected?.id ? 'selected' : ''}`} onClick={() => onSelectRobot(robot.id)}>
-            <span className="robot-chip" style={{ background: robot.color }} />
-            <strong style={{ width: 24 }}>{robot.id}</strong>
-            <span style={{ flex: 1, color: 'var(--ink-2)' }}>{STATUS_TEXT[robot.status] ?? robot.status}{robot.yielding ? ' (waiting)' : ''}</span>
-            <span className="mini-bar" title={`Battery ${Math.round(robot.battery)}%`}>
-              <div style={{ width: `${robot.battery}%`, background: batteryColor(robot.battery) }} />
-            </span>
-          </button>
-          {robot.id === selected?.id && <RobotDetail robot={robot} productNames={productNames} />}
-        </div>
-      ))}
+    <Window title={<><PixelIcon name="robot" /> Robots <span className="win-count">{robots.length}</span></>} className="operations-robots" bodyStyle={{ padding: 8 }}
+      collapsible collapsed={collapsed} onToggle={onToggle}>
+      {robots.length === 0 && <p className="muted" style={{ padding: 6 }}>Waiting for the fleet…</p>}
+      <div className="fleet-list">
+        {robots.map((robot) => {
+          const isSelected = robot.id === selected?.id;
+          return (
+            <button key={robot.id} type="button" className={`fleet-card ${isSelected ? 'selected' : ''}`} style={{ '--robot': robot.color }}
+              aria-pressed={isSelected} onClick={() => onSelectRobot(robot.id)}>
+              <span className="fleet-card-row">
+                <span className="fleet-pet"><RobotPet robot={robot} cheer={robotCheers?.[robot.id]} tick={tick} /></span>
+                <span className="fleet-id"><span className="fleet-name">{robotNames[robot.id] ?? robot.id}</span>{robotNames[robot.id] && <span className="fleet-tag">{robot.id}</span>}</span>
+                <span className="fleet-status">
+                  <span className="fleet-status-text">{robot.yielding ? 'Waiting' : isSnoozing(robot) ? 'Napping' : STATUS_TEXT[robot.status] ?? robot.status}</span>
+                  {robot.order_id && <OrderTag orderId={robot.order_id} status={orderStatus[robot.order_id]} />}
+                </span>
+                <PixelBattery level={robot.battery} />
+              </span>
+              {isSelected && <RobotChips robot={robot} productNames={productNames} />}
+            </button>
+          );
+        })}
+      </div>
     </Window>
   );
 }

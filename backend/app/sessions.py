@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass, field
 
 from .errors import Conflict
-from .repository import load_layout, load_model, model_meta
+from .repository import load_layout, load_model, model_meta, model_status
 from .simulation.models import SessionConfig
 from .simulation.q_learning import export_model
 from .simulation.simulator import Simulator
@@ -62,21 +62,19 @@ class SessionManager:
             raise ValueError("Online learning needs a model to learn into.")
         layout = load_layout(self.storage, config.layout_id)
         warnings: list[str] = []
-        qtables = hp = model_name = None
-        if config.model_id:
-            row, hp, qtables, _ = load_model(self.storage, config.model_id)
-            model_name = row["name"]
-            if (qtables.width, qtables.height) != (layout.width, layout.height):
-                if config.online_learning:
-                    raise ValueError("Online learning needs a model trained on a grid of the same size as the layout.")
-                warnings.append(f"This model's grid is {qtables.width}x{qtables.height} but the layout is "
-                                f"{layout.width}x{layout.height}, so every leg uses A*.")
-            elif row["layout_fingerprint"] != layout.fingerprint():
-                warnings.append("This model was trained on a different layout; destinations without a table fall back to A*.")
-            if len(qtables) == 0:
-                warnings.append("This model has no trained destinations yet, so every leg uses A*.")
-        elif config.routing_mode != "astar":
-            warnings.append("No model selected, so every leg uses A*.")
+        # Every warehouse runs with its own model, trained on its current floor plan.
+        if not config.model_id:
+            config.model_id = model_status(self.storage, config.layout_id, layout)["model_id"]
+            if not config.model_id:
+                raise ValueError("This warehouse has no trained model yet. Train one in the Training Lab first.")
+        row, hp, qtables, _ = load_model(self.storage, config.model_id)
+        model_name = row["name"]
+        if row["layout_id"] != config.layout_id:
+            raise ValueError("That model was trained for a different warehouse.")
+        if row["layout_fingerprint"] != layout.fingerprint() or (qtables.width, qtables.height) != (layout.width, layout.height):
+            raise ValueError("This warehouse changed since its model was trained. Retrain it first.")
+        if len(qtables) == 0:
+            raise ValueError("This model has not been trained yet.")
         sim = Simulator(layout, config, qtables, hp)
         name = config.name or f"{MODE_LABELS[config.routing_mode]} · {model_name or 'no model'} · {len(sim.robots)} robots"
         live = LiveSession(self.storage.create_session(name, config.to_dict()), name, config, sim, model_name)

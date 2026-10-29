@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 
+from ..repository import model_status
 from ..schemas import LayoutIn
 from ..services import Services, get_services
 from ..simulation.grid import Layout, assign_products
@@ -12,7 +13,7 @@ def _detail(services: Services, layout_id: str) -> dict:
     row = services.storage.get_layout(layout_id)
     layout = Layout.from_dict(row["layout"])
     return {"id": row["id"], "is_default": row["is_default"], "updated_at": row["updated_at"], **layout.to_dict(),
-            "name": row["name"]}
+            "name": row["name"], **model_status(services.storage, layout_id, layout)}
 
 
 def _build(body: LayoutIn) -> Layout:
@@ -20,14 +21,15 @@ def _build(body: LayoutIn) -> Layout:
     if body.products is None:
         layout.products = assign_products(layout)
     else:
-        layout.products = [Product(p.sku, p.name, tuple(p.face), p.stock) for p in body.products]
+        layout.products = [Product(p.sku, p.name, tuple(p.face), p.stock, p.capacity) for p in body.products]
     layout.validate()
     return layout
 
 
 @router.get("/layouts")
 def list_layouts(services: Services = Depends(get_services)):
-    return services.storage.list_layouts()
+    # Each layout needs its own trained model before it can run, so the list says where each one stands.
+    return [{**row, **model_status(services.storage, row["id"])} for row in services.storage.list_layouts()]
 
 
 @router.get("/layouts/{layout_id}")

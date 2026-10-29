@@ -1,16 +1,19 @@
 import numpy as np
 import pytest
 
-from app.simulation.grid import AISLE, default_layout
+from app.simulation.grid import AISLE, VOID, Layout, assign_products, default_layout
 from app.simulation.models import Hyperparameters, OrderSettings, SessionConfig, StopCondition
 from app.simulation.q_learning import QTableSet, train_model
 from app.simulation.simulator import Simulator
 
 
-def make(robots=4, mode="astar", rate=0.0, ticks=2000, layout=None, qtables=None, stop=None, **kw):
+def make(robots=4, mode="astar", rate=0.0, ticks=2000, layout=None, qtables=None, stop=None, trucks=True, **kw):
     cfg = SessionConfig(routing_mode=mode, robot_count=robots, orders=OrderSettings(rate_per_100=rate, seed=42),
                         stop=stop or StopCondition("ticks", ticks), **kw)
-    return Simulator(layout or default_layout(), cfg, qtables)
+    sim = Simulator(layout or default_layout(), cfg, qtables)
+    if not trucks:  # movement tests: keep idle robots from being sent off to restock
+        sim.receiving.bays = []
+    return sim
 
 
 def run_until(sim, cond, limit=2000, on_step=None):
@@ -70,14 +73,55 @@ def test_multi_item_order_picks_at_each_face():
     assert len(picked) == 3
 
 
-def test_out_of_stock_order_fails():
+def test_out_of_stock_order_waits_for_a_truck_then_ships():
     layout = default_layout()
     layout.products[0].stock = 0
-    sim = make(robots=1, layout=layout)
+    sim = make(robots=2, layout=layout)
+    order = sim.inject_order([{"sku": "SKU-001", "qty": 1}])
+    seen = [e["type"] for e in sim.step()]
+    assert order.status == "queued" and order.waiting_stock
+    assert run_until(sim, lambda: order.status == "delivered", 400, on_step=lambda s, ev: seen.extend(e["type"] for e in ev))
+    for kind in ("truck_called", "truck_arriving", "truck_docked", "pallet_dropped", "pallet_loaded", "restocked"):
+        assert kind in seen
+    assert seen.index("truck_called") < seen.index("truck_docked") < seen.index("pallet_dropped") < seen.index("restocked")
+    assert not order.waiting_stock and sim.metrics.failed == 0
+
+
+def test_out_of_stock_order_fails_without_an_unload_bay():
+    layout = default_layout()
+    layout.products[0].stock = 0
+    sim = make(robots=1, layout=layout, trucks=False)
     order = sim.inject_order([{"sku": "SKU-001", "qty": 1}])
     sim.step()
     assert order.status == "failed" and order.fail_reason == "out_of_stock"
     assert sim.metrics.failed == 1
+
+
+def test_trucks_keep_the_shelves_stocked_within_capacity():
+    sim = make(robots=4, rate=8.0, ticks=1500)
+    caps = {p.sku: p.capacity for p in sim.layout.products}
+    bay = set(sim.layout.cells_of("unload"))
+
+    def check(s, _events):
+        assert all(0 <= s.inventory.stock[k] <= caps[k] for k in caps)
+        assert all(p.cell in bay for p in s.receiving.pallets.values())
+        assert len(s.receiving.pallets) <= len(bay)
+        assert len({p.cell for p in s.receiving.pallets.values()}) == len(s.receiving.pallets)
+        assert sum(t.state != "en_route" for t in s.trucks_on_bay(0)) <= 1
+
+    sim.trucks_on_bay = lambda b: [t for t in sim.receiving.trucks if t.bay == b]
+    run_until(sim, lambda: sim.finished, 1600, on_step=check)
+    assert sim.receiving.restocked > 50 and sim.receiving.deliveries >= 3
+    assert sim.metrics.failed == 0 and sim.metrics.delivered > 60
+
+
+def test_restocking_robot_carries_the_pallet_to_its_shelf():
+    sim = make(robots=1)
+    robot = sim.robots[0]
+    statuses = []
+    run_until(sim, lambda: sim.receiving.restocked > 0, 400, on_step=lambda s, ev: statuses.append(robot.status))
+    order = [s for i, s in enumerate(statuses) if i == 0 or statuses[i - 1] != s]
+    assert ["to_unload", "loading", "to_shelf", "restocking"] == [s for s in order if s in ("to_unload", "loading", "to_shelf", "restocking")][:4]
 
 
 def test_rush_order_is_dispatched_first():
@@ -143,7 +187,7 @@ def test_robots_never_share_a_cell_under_heavy_load():
 
 
 def test_head_on_robots_in_one_wide_aisle_get_past_each_other():
-    sim = make(robots=2)
+    sim = make(robots=2, trucks=False)
     r1, r2 = sim.robots
     r1.pos, r2.pos = (6, 1), (6, 3)
     sim._go(r1, "parking", (6, 4))
@@ -154,7 +198,7 @@ def test_head_on_robots_in_one_wide_aisle_get_past_each_other():
 def test_robot_blocking_a_shared_target_in_a_one_wide_aisle_is_not_deadlocked():
     # Seen in the acceptance run: R1 sits on the face (6,7) and wants out upward, while R2 above it
     # and R3 below it both want (6,7). Nobody may wait forever.
-    sim = make(robots=3)
+    sim = make(robots=3, trucks=False)
     r1, r2, r3 = sim.robots
     r1.pos, r2.pos, r3.pos = (6, 7), (6, 6), (6, 8)
     sim._go(r1, "parking", (6, 3))
@@ -203,7 +247,9 @@ def test_snapshot_shape(trained):
     for _ in range(30):
         sim.step()
     snap = sim.snapshot()
-    assert set(snap) == {"tick", "finished", "routing_mode", "robots", "orders", "stations", "stock", "stats", "events"}
+    assert set(snap) == {"tick", "finished", "routing_mode", "robots", "orders", "stations", "stock", "receiving",
+                         "stats", "events"}
+    assert set(snap["receiving"]) == {"trucks", "pallets", "backlog", "incoming", "restocked", "deliveries"}
     robot = snap["robots"][0]
     assert {"id", "x", "y", "battery", "status", "path", "q_scores", "carrying", "target", "heading"} <= set(robot)
     assert snap["stations"][0].keys() == {"x", "y", "occupant", "remaining"}
@@ -219,3 +265,20 @@ def test_deadlock_patience_follows_collision_priority_not_list_order():
     assert sim._patience(r8, priority) > sim._patience(r1, priority)
     lowest = max(sim.robots, key=lambda r: priority[r.id])
     assert sim._patience(lowest, priority) == 3
+
+
+def test_robots_never_drive_onto_void_cells():
+    cells = [[AISLE] * 8 for _ in range(6)]
+    for y in range(3):
+        for x in range(4, 8):
+            cells[y][x] = VOID  # an L-shaped floor
+    cells[4][2] = cells[4][3] = "rack"
+    cells[5][0], cells[5][7], cells[3][7], cells[0][0] = "charger", "packing", "dock", "unload"
+    layout = Layout(8, 6, cells)
+    layout.products = assign_products(layout)
+    layout.validate()
+    sim = make(robots=3, rate=30.0, layout=layout)
+    for _ in range(300):
+        sim.step()
+        assert all(layout.cell_type(r.pos) != VOID for r in sim.robots)
+    assert sim.metrics.delivered > 0

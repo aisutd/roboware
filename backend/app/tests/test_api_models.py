@@ -10,7 +10,7 @@ def test_default_layout_is_listed(client):
     layouts = client.get("/api/layouts").json()
     assert layouts[0]["id"] == "default" and layouts[0]["is_default"] is True
     detail = client.get("/api/layouts/default").json()
-    assert detail["width"] == 16 and len(detail["destinations"]) == 29 and len(detail["products"]) == 24
+    assert detail["width"] == 16 and len(detail["destinations"]) == 38 and len(detail["products"]) == 24
 
 
 def test_create_layout_auto_assigns_products_and_validates(client):

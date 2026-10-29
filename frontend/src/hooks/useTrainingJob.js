@@ -18,13 +18,17 @@ export function useTrainingJob(jobId, onFinished) {
       try {
         const next = await api.getTrainingJob(jobId);
         if (cancelled) return;
-        setJob(next);
+        setJob({ ...next, clientJobId: jobId });
         if (next.status === 'completed' || next.status === 'failed') {
           finishedRef.current?.(next);
           return;
         }
       } catch (err) {
-        if (!cancelled) setJob((prev) => ({ ...(prev ?? {}), status: 'failed', error: err.message }));
+        if (!cancelled) {
+          // A transport error does not mean the backend training job failed.
+          setJob((prev) => ({ ...(prev?.clientJobId === jobId ? prev : {}), clientJobId: jobId, pollingError: err.message }));
+          timer = setTimeout(poll, 1500);
+        }
         return;
       }
       timer = setTimeout(poll, POLL_MS);
@@ -36,5 +40,5 @@ export function useTrainingJob(jobId, onFinished) {
     };
   }, [jobId]);
 
-  return jobId ? job : null;
+  return jobId && job?.clientJobId === jobId ? job : null;
 }

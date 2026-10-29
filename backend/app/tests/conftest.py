@@ -20,3 +20,12 @@ def wait_for_job(client, job_id, timeout=60):
             return job
         time.sleep(0.05)
     raise AssertionError("training job did not finish")
+
+
+def train_model(client, layout_id="default", episodes=20, name="Trained"):
+    """Create and train a small model for a layout; sessions need one before they can start."""
+    model = client.post("/api/models", json={"name": name, "layout_id": layout_id,
+                                             "hyperparameters": {"episodes_per_destination": episodes}}).json()
+    job = wait_for_job(client, client.post(f"/api/models/{model['id']}/train", json={}).json()["id"])
+    assert job["status"] == "completed", job
+    return client.get(f"/api/models/{model['id']}").json()

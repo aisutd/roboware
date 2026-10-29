@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BarCompare } from '../components/BarCompare';
 import { LineChart } from '../components/LineChart';
 import { useToast } from '../components/toastContext';
+import { throughputDelta } from '../lib/comparison';
 import { api } from '../services/api';
 
-const COLORS = ['#FF5A26', '#2563EB', '#10B981', '#9333EA', '#E11D48', '#0891B2'];
-const MODE_LABELS = { hybrid: 'Hybrid', q_only: 'Q-only', astar: 'A*' };
+const COLORS = ['#e4b366', '#8eafe4', '#78b9ac', '#b6a0d5', '#f19090', '#82c8d6'];
+import { NAVIGATION_LABELS as MODE_LABELS, NAVIGATION_MODES } from '../lib/navigation';
 const METRICS = [
+  { key: 'delivered', label: 'Completed deliveries', better: 'high' },
+  { key: 'avg_cycle_time', label: 'Average order time (ticks)', better: 'low' },
   { key: 'throughput_per_100', label: 'Orders per 100 ticks', better: 'high' },
   { key: 'p95_cycle_time', label: 'p95 order time (ticks)', better: 'low' },
   { key: 'fallback_share', label: 'Fallback share of legs', better: 'low' },
@@ -24,6 +27,13 @@ const fmt = (v) => (v === null || v === undefined ? '—' : typeof v === 'number
 
 export function HistoryView({ onOpenSession }) {
   const toast = useToast();
+  const detailRequest = useRef(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [opening, setOpening] = useState(false);
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [comparisonConfig, setComparisonConfig] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [models, setModels] = useState([]);
   const [layouts, setLayouts] = useState([]);
@@ -42,17 +52,22 @@ export function HistoryView({ onOpenSession }) {
         setSessions(s);
         setModels(m);
         setLayouts(l);
+        setLoadError(null);
       })
-      .catch((err) => toast(err.message));
+      .catch((err) => { if (!cancelled) { setLoadError(err.message); toast(err.message); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [listVersion, toast]);
 
   const open = async (id) => {
+    const request = ++detailRequest.current;
+    setOpening(true);
     try {
-      setSelected(await api.getSession(id));
+      const detail = await api.getSession(id);
+      if (request === detailRequest.current) setSelected(detail);
     } catch (err) {
-      toast(err.message);
-    }
+      if (request === detailRequest.current) toast(err.message);
+    } finally { if (request === detailRequest.current) setOpening(false); }
   };
 
   const modelName = (id) => (id ? models.find((m) => m.id === id)?.name ?? 'deleted model' : 'no model');
@@ -68,6 +83,7 @@ export function HistoryView({ onOpenSession }) {
         orders: { rate_per_100: Number(form.rate_per_100), seed: Number(form.seed) },
         runs: runs.map((r) => ({ model_id: r.model_id || null, routing_mode: r.routing_mode })),
       });
+      setComparisonConfig({ ...form });
       setResults(response.runs.map((r, i) => ({ ...r, color: COLORS[i % COLORS.length] })));
     } catch (err) {
       toast(err.message);
@@ -78,17 +94,26 @@ export function HistoryView({ onOpenSession }) {
 
   const setRun = (i, patch) => setRuns(runs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
+  const visibleSessions = sessions.filter((session) => session.name.toLowerCase().includes(query.toLowerCase()) && (statusFilter === 'all' || session.status === statusFilter));
+  const baseline = results?.find((run) => run.routing_mode === 'astar');
   return (
-    <div className="view-scroll">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-        <h1 className="view-title" style={{ margin: 0 }}>History & Compare</h1>
-        <button type="button" className="clay-btn clay-pill-sm" onClick={() => setListVersion((v) => v + 1)}>Refresh</button>
+    <div className="view-scroll history-page">
+      <div className="product-page-heading">
+        <div><span className="eyebrow">Operational evidence</span><h1 className="view-title">History & Compare</h1><p>Review recorded sessions and compare routing on the same seeded workload.</p></div>
+        <button type="button" className="clay-btn clay-pill-sm" disabled={loading} onClick={() => { setLoading(true); setListVersion((v) => v + 1); }}>{loading ? 'Loading…' : 'Refresh'}</button>
       </div>
+      <details className="advanced-options metric-explainer"><summary>How to read simulation results</summary><div className="advanced-fields"><p>Deliveries count completed orders. Throughput is deliveries per 100 simulation steps. Average order time measures how long an order takes from creation to delivery; p95 means 95% of completed orders were faster than that value. Waits count collision-related delays. Fallbacks mean a robot used shortest-path navigation when a learned route was unavailable. Compare actual results rather than assuming AI is always faster.</p></div></details>
+      {loadError && <div className="inline-error" role="alert">Unable to load history: {loadError}</div>}
 
       <div className="clay-card panel" style={{ marginBottom: 16 }}>
-        <div className="view-subtitle">Sessions</div>
+        <div className="history-list-heading"><div className="view-subtitle">Sessions <span className="badge">{sessions.length}</span></div>
+          <label className="field">Search sessions<input type="search" className="clay-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Session name" /></label>
+          <label className="field">Status<select className="clay-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">All statuses</option>{[...new Set(sessions.map((session) => session.status))].map((status) => <option key={status}>{status}</option>)}</select></label>
+        </div>
+        {opening && <p className="micro-copy" role="status">Loading selected session…</p>}
+        {!loading && sessions.length > 0 && visibleSessions.length === 0 && <p className="muted">No sessions match these filters.</p>}
         {sessions.length === 0 ? (
-          <p style={{ fontSize: 12, color: '#8E8578' }}>No sessions yet. Start one from the Session view.</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>{loading ? 'Loading recorded sessions…' : loadError ? 'History is currently unavailable.' : 'No sessions yet. Start one from the Session view.'}</p>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table className="data-table">
@@ -97,8 +122,8 @@ export function HistoryView({ onOpenSession }) {
                   <th className="num">Per 100</th><th className="num">p95</th><th className="num">Fallbacks</th><th>Started</th></tr>
               </thead>
               <tbody>
-                {sessions.map((s) => (
-                  <tr key={s.id} className={`clickable ${selected?.id === s.id ? 'selected' : ''}`} onClick={() => open(s.id)}>
+                {visibleSessions.map((s) => (
+                  <tr key={s.id} className={`clickable ${selected?.id === s.id ? 'selected' : ''}`} onClick={() => open(s.id)} tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(s.id); } }}>
                     <td>{s.name}</td>
                     <td><span className={`badge ${s.live ? 'badge-live' : ''}`}>{s.status}</span></td>
                     <td>{modelName(s.config.model_id)} · {MODE_LABELS[s.config.routing_mode]}</td>
@@ -122,30 +147,30 @@ export function HistoryView({ onOpenSession }) {
             <h2 style={{ fontSize: 16, fontWeight: 800 }}>{selected.name}</h2>
             {selected.live && <button type="button" className="clay-btn clay-btn-accent clay-pill-sm" onClick={() => onOpenSession(selected.id)}>Open live view</button>}
           </div>
-          {selected.error && <p style={{ color: '#EF4444', fontSize: 12 }}>{selected.error}</p>}
+          {selected.error && <p style={{ color: 'var(--red)', fontSize: 12 }}>{selected.error}</p>}
           <div className="stat-grid" style={{ marginBottom: 12 }}>
             {SUMMARY_STATS.map(([key, label]) => (
               <div key={key} className="clay-card-flat stat"><span className="stat-label">{label}</span><span className="stat-value">{fmt(selected.summary?.[key])}</span></div>
             ))}
           </div>
           <LineChart xLabel="tick" yLabel="Orders per 100 ticks"
-            series={[{ label: 'Throughput', color: '#FF5A26', points: selected.metrics.map((m) => ({ x: m.tick, y: m.throughput_per_100 })) }]} />
+            series={[{ label: 'Throughput', color: '#e4b366', points: selected.metrics.map((m) => ({ x: m.tick, y: m.throughput_per_100 })) }]} />
           <LineChart xLabel="tick" yLabel="Orders" height={150}
             series={[
-              { label: 'Delivered', color: '#10B981', points: selected.metrics.map((m) => ({ x: m.tick, y: m.delivered })) },
-              { label: 'Queued', color: '#B8B0A2', points: selected.metrics.map((m) => ({ x: m.tick, y: m.queued })) },
+              { label: 'Delivered', color: '#78b9ac', points: selected.metrics.map((m) => ({ x: m.tick, y: m.delivered })) },
+              { label: 'Queued', color: '#98a5b5', points: selected.metrics.map((m) => ({ x: m.tick, y: m.queued })) },
             ]} />
         </div>
       )}
 
       <form className="clay-card panel" onSubmit={runCompare}>
         <div className="view-subtitle">Compare models on the same orders</div>
-        <p style={{ fontSize: 11, color: '#8E8578', marginBottom: 10 }}>
-          Every run replays the same seeded order stream headless, so differences come from the routing alone.
+        <p style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 10 }}>
+          Each run simulates the same order pattern so you can compare navigation choices. Shortest-path navigation needs no training. For AI-trained or combined navigation, choose a trained model; without one, the backend uses shortest-path navigation.
         </p>
         <div className="field-row" style={{ marginBottom: 12 }}>
           <label className="field">Layout
-            <select className="clay-select" value={form.layout_id} onChange={(e) => setForm({ ...form, layout_id: e.target.value })}>
+            <select className="clay-select" value={form.layout_id} onChange={(e) => { setForm({ ...form, layout_id: e.target.value }); setRuns(runs.map((run) => ({ ...run, model_id: '' }))); }}>
               {layouts.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </label>
@@ -157,14 +182,12 @@ export function HistoryView({ onOpenSession }) {
         {runs.map((run, i) => (
           <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: COLORS[i] }} />
-            <select className="clay-select" value={run.model_id} onChange={(e) => setRun(i, { model_id: e.target.value })}>
+            <select aria-label={`Run ${i + 1} model`} className="clay-select" value={run.model_id} onChange={(e) => setRun(i, { model_id: e.target.value })}>
               <option value="">No model</option>
               {models.filter((m) => m.layout_id === form.layout_id).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
-            <select className="clay-select" value={run.routing_mode} onChange={(e) => setRun(i, { routing_mode: e.target.value })}>
-              <option value="astar">Pure A*</option>
-              <option value="q_only">Q-learning only</option>
-              <option value="hybrid">Hybrid</option>
+            <select aria-label={`Run ${i + 1} routing mode`} className="clay-select" value={run.routing_mode} onChange={(e) => setRun(i, { routing_mode: e.target.value })}>
+              {NAVIGATION_MODES.map((mode) => <option key={mode.id} value={mode.id}>{mode.label} ({mode.technical})</option>)}
             </select>
             <button type="button" className="clay-btn clay-pill-sm" disabled={runs.length <= 1} onClick={() => setRuns(runs.filter((_, j) => j !== i))}>Remove</button>
           </div>
@@ -176,6 +199,16 @@ export function HistoryView({ onOpenSession }) {
 
         {results && (
           <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div className="comparison-result-heading"><h2>Completed comparison</h2><p className="micro-copy">Seed {comparisonConfig?.seed} · {comparisonConfig?.ticks} ticks · {comparisonConfig?.robot_count} robots · {layouts.find((layout) => layout.id === comparisonConfig?.layout_id)?.name ?? comparisonConfig?.layout_id}. Results reflect these settings, even if the form above changes.</p></div>
+            <div className="comparison-cards">{results.map((run, i) => {
+              const delta = throughputDelta(run, baseline);
+              return <section key={i} className="comparison-card" style={{ borderTopColor: run.color }}>
+                <span className="eyebrow">Run {i + 1}</span><h3>{MODE_LABELS[run.routing_mode]}</h3><p className="micro-copy">{run.label}</p>
+                <div className="stat-value">{fmt(run.summary?.throughput_per_100)} <span className="micro-copy">orders / 100 ticks</span></div>
+                <p className="micro-copy">{fmt(run.summary?.delivered)} delivered · {fmt(run.summary?.avg_cycle_time)} ticks average order time</p>
+                {run !== baseline && delta !== null && <span className="badge">{delta > 0 ? '+' : ''}{delta.toFixed(1)}% throughput vs first A* run</span>}
+              </section>;
+            })}</div>
             <BarCompare runs={results} metrics={METRICS} />
             <LineChart xLabel="tick" yLabel="Orders per 100 ticks"
               series={results.map((r) => ({ label: r.label, color: r.color, points: r.series.map((p) => ({ x: p.tick, y: p.throughput_per_100 })) }))} />

@@ -13,14 +13,20 @@ class Product:
     name: str
     face: Cell
     stock: int
+    capacity: int = 0  # what the shelf holds; trucks refill up to this. 0 means "the starting stock"
+
+    def __post_init__(self) -> None:
+        self.capacity = max(self.capacity or self.stock, 1)
 
     def to_dict(self) -> dict:
-        return {"sku": self.sku, "name": self.name, "face": list(self.face), "stock": self.stock}
+        return {"sku": self.sku, "name": self.name, "face": list(self.face), "stock": self.stock,
+                "capacity": self.capacity}
 
     @classmethod
     def from_dict(cls, data: dict) -> "Product":
         face = data["face"]
-        return cls(str(data["sku"]), str(data["name"]), (int(face[0]), int(face[1])), int(data["stock"]))
+        return cls(str(data["sku"]), str(data["name"]), (int(face[0]), int(face[1])), int(data["stock"]),
+                   int(data.get("capacity") or 0))
 
 
 @dataclass
@@ -67,6 +73,7 @@ class Order:
     timeline: dict[str, int] = field(default_factory=dict)
     package_id: str | None = None
     fail_reason: str | None = None
+    waiting_stock: bool = False  # queued until a delivery truck restocks one of its products
 
     def __post_init__(self) -> None:
         self.timeline.setdefault("queued", self.created_tick)
@@ -92,6 +99,7 @@ class Order:
             "timeline": dict(self.timeline),
             "package_id": self.package_id,
             "fail_reason": self.fail_reason,
+            "waiting_stock": self.waiting_stock,
         }
 
 
@@ -126,8 +134,42 @@ class OrderSettings:
 
 ROUTING_MODES = ("hybrid", "q_only", "astar")
 ROBOT_STATUSES = ("idle", "parking", "to_pick", "picking", "to_pack", "queued_pack", "packing",
-                  "to_dock", "to_charger", "charging")
+                  "to_dock", "to_charger", "charging", "to_unload", "loading", "to_shelf", "restocking")
 ROBOT_COLORS = ["#FF5A26", "#2563EB", "#10B981", "#9333EA", "#E11D48", "#0891B2", "#CA8A04", "#4B5563"]
+
+
+@dataclass
+class Pallet:
+    """Stock a truck left at an unload bay, waiting for a robot to carry it to its shelf."""
+    id: str
+    sku: str
+    qty: int
+    cell: Cell | None  # None once a robot has loaded it
+    robot_id: str | None = None
+    dropped_tick: int = 0
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "sku": self.sku, "qty": self.qty, "x": self.cell[0] if self.cell else None,
+                "y": self.cell[1] if self.cell else None, "robot": self.robot_id}
+
+
+@dataclass
+class Truck:
+    """A delivery truck serving one bay: en_route -> arriving -> unloading -> leaving."""
+    id: str
+    name: str
+    bay: int
+    cargo: list[tuple[str, int]]
+    state: str = "en_route"
+    timer: int = 0
+    total: int = 0  # length of the current state in ticks, so the UI can animate it
+    waited: int = 0
+    unloaded: int = 0
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "name": self.name, "bay": self.bay, "state": self.state, "timer": self.timer,
+                "total": self.total, "cargo": [{"sku": s, "qty": q} for s, q in self.cargo],
+                "unloaded": self.unloaded}
 
 
 @dataclass
@@ -161,6 +203,7 @@ class Robot:
     leg_steps: int = 0
     leg_optimal: int = 0
     q_step: tuple[int, int] | None = None  # (state, action) chosen by the Q-table this tick
+    pallet: Pallet | None = None  # restock job: the pallet claimed at a bay, then carried to its shelf
 
 
 @dataclass

@@ -24,6 +24,7 @@ class ProductIn(BaseModel):
     name: str
     face: tuple[int, int]
     stock: int = Field(ge=0)
+    capacity: int = Field(0, ge=0)  # 0: the shelf holds what it starts with
 
 
 class LayoutIn(BaseModel):

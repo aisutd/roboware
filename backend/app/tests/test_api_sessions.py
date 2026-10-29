@@ -3,7 +3,12 @@ import time
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from app.tests.conftest import wait_for_job
+from app.tests.conftest import train_model, wait_for_job
+
+
+@pytest.fixture(autouse=True)
+def trained(client):
+    return train_model(client)
 
 
 def create(client, **overrides):
@@ -55,15 +60,32 @@ def test_play_at_max_speed_runs_to_the_stop_condition(client):
     assert [m["tick"] for m in detail["metrics"]][:3] == [10, 20, 30]
 
 
-def test_session_with_untrained_model_warns(client):
-    model = client.post("/api/models", json={"name": "Empty"}).json()
-    s = create(client, model_id=model["id"], routing_mode="q_only")
-    assert any("no trained destinations" in w for w in s["warnings"])
-    assert control(client, s["id"], "step").json()["tick"] == 1
+def test_sessions_need_the_warehouse_s_own_trained_model(client, trained):
+    s = create(client, routing_mode="q_only")
+    assert s["config"]["model_id"] == trained["id"]
+    empty = client.post("/api/models", json={"name": "Empty"}).json()
+    untrained = client.post("/api/sessions", json={"model_id": empty["id"]})
+    assert untrained.status_code == 400 and "not been trained" in untrained.json()["detail"]
 
 
-def test_q_only_without_model_warns(client):
-    assert any("No model selected" in w for w in create(client, routing_mode="q_only")["warnings"])
+def test_a_new_or_edited_warehouse_cannot_run_until_it_is_trained(client):
+    layout = client.get("/api/layouts/default").json()
+    body = {"name": "Copy", "width": layout["width"], "height": layout["height"], "cells": layout["cells"]}
+    copy = client.post("/api/layouts", json=body).json()
+    assert copy["model_status"] == "untrained"
+    blocked = client.post("/api/sessions", json={"layout_id": copy["id"]})
+    assert blocked.status_code == 400 and "no trained model" in blocked.json()["detail"]
+    model = train_model(client, copy["id"], episodes=5)
+    assert client.get(f"/api/layouts/{copy['id']}").json()["model_status"] == "ready"
+    assert create(client, layout_id=copy["id"])["config"]["model_id"] == model["id"]
+    body["cells"][0][0] = "void"
+    client.put(f"/api/layouts/{copy['id']}", json=body)
+    assert next(l for l in client.get("/api/layouts").json() if l["id"] == copy["id"])["model_status"] == "outdated"
+    assert client.post("/api/sessions", json={"layout_id": copy["id"]}).status_code == 400
+    wait_for_job(client, client.post(f"/api/models/{model['id']}/train", json={}).json()["id"])
+    assert client.get(f"/api/layouts/{copy['id']}").json()["model_status"] == "ready"  # retraining catches up
+    other = client.post("/api/sessions", json={"layout_id": "default", "model_id": model["id"]})
+    assert other.status_code == 400 and "different warehouse" in other.json()["detail"]
 
 
 def test_invalid_session_requests(client):
@@ -106,7 +128,7 @@ def test_online_learning_session_saves_a_new_model_version(client):
     saved = client.post(f"/api/sessions/{s['id']}/save-model", json={})
     assert saved.status_code == 201
     assert saved.json()["parent_model_id"] == model["id"] and saved.json()["version"] == 2
-    assert saved.json()["trained_destinations"] == 29
+    assert saved.json()["trained_destinations"] == 38
     plain = create(client)
     assert client.post(f"/api/sessions/{plain['id']}/save-model", json={}).status_code == 409
 
@@ -123,24 +145,19 @@ def test_compare_runs_each_configuration(client):
     assert client.post("/api/compare", json=too_many).status_code == 422
 
 
-def test_model_with_a_different_grid_size_falls_back_to_astar(client):
-    model = client.post("/api/models", json={"name": "Small", "hyperparameters": {"episodes_per_destination": 20}}).json()
-    wait_for_job(client, client.post(f"/api/models/{model['id']}/train", json={}).json()["id"])
-    cells = [["aisle"] * 20 for _ in range(10)]
-    for x in (4, 5, 9, 10, 14, 15):
-        for y in (1, 2, 3, 5, 6, 7):
-            cells[y][x] = "rack"
-    cells[2][18], cells[8][18], cells[2][0] = "packing", "dock", "charger"
-    wide = client.post("/api/layouts", json={"name": "Wide", "width": 20, "height": 10, "cells": cells})
-    assert wide.status_code == 201, wide.text
-    s = create(client, layout_id=wide.json()["id"], model_id=model["id"], routing_mode="q_only",
-               stop={"type": "ticks", "value": 60})
-    assert any("grid" in w for w in s["warnings"])
-    for _ in range(60):
-        assert control(client, s["id"], "step").status_code == 200
-    compare = client.post("/api/compare", json={"layout_id": wide.json()["id"], "ticks": 60, "robot_count": 2,
-                                                "runs": [{"model_id": model["id"], "routing_mode": "q_only"}]})
-    assert compare.status_code == 200
+def test_void_cells_shape_the_floor_and_block_movement(client):
+    cells = [["aisle"] * 8 for _ in range(6)]
+    for y in range(3):
+        for x in range(4, 8):
+            cells[y][x] = "void"  # an L-shaped warehouse
+    cells[4][2] = cells[4][3] = "rack"
+    cells[5][0], cells[5][7], cells[3][7], cells[0][0] = "charger", "packing", "dock", "unload"
+    layout = client.post("/api/layouts", json={"name": "L", "width": 8, "height": 6, "cells": cells})
+    assert layout.status_code == 201, layout.text
+    assert all(cells[y][x] != "void" for x, y in layout.json()["destinations"])
+    train_model(client, layout.json()["id"], episodes=5)
+    s = create(client, layout_id=layout.json()["id"], stop={"type": "ticks", "value": 40})
+    assert control(client, s["id"], "step").status_code == 200
 
 
 def test_order_size_weights_must_sum_above_zero(client):

@@ -7,7 +7,7 @@ from collections import deque
 
 from .astar import distance_map, find_path, manhattan
 from .collisions import resolve_moves
-from .grid import ACTIONS, AISLE, CHARGER, DELTAS, DOCK, PACKING, Layout
+from .grid import ACTIONS, AISLE, CHARGER, DELTAS, PACKING, Layout
 from .metrics import MetricsTracker
 from .models import (
     ROBOT_COLORS,
@@ -22,6 +22,7 @@ from .models import (
 )
 from .orders import Inventory, OrderGenerator
 from .q_learning import QTableSet, greedy_action, q_update, state_index
+from .receiving import Receiving
 
 MOVE_COST = 0.8
 WAIT_COST = 0.1
@@ -31,11 +32,14 @@ DISPATCH_MIN_BATTERY = 35.0
 CRITICAL_BATTERY = 10.0
 PICK_TICKS = 1
 PACK_TICKS = 3
+LOAD_TICKS = 2  # lifting a pallet off the bay floor
+SHELVE_TICKS = 2  # putting a pallet's stock on its shelf
+STALE_PALLET = 60  # a pallet left this long on the bay floor jumps ahead of new orders
 MAX_WAIT = 3
 REVISIT_LIMIT = 2  # entering the same cell a third time on one leg means the policy is looping
 PREVIEW_STEPS = 30
 RECENT_FINISHED = 20
-WORKING = ("picking", "packing")
+WORKING = ("picking", "packing", "loading", "restocking")
 # Degrees clockwise; the UI draws the robot's nose pointing right at 0.
 HEADINGS = {(1, 0): 0, (0, 1): 90, (-1, 0): 180, (0, -1): 270}
 
@@ -52,11 +56,12 @@ class Simulator:
             qtables = qtables.copy()
         self.qtables = qtables
         self.inventory = Inventory(layout.products)
+        self.receiving = Receiving(layout, self.inventory, {p.sku: p.capacity for p in layout.products})
         self.generator = OrderGenerator(config.orders, [p.sku for p in layout.products],
                                         random.Random(config.orders.seed))
         self.destinations = set(layout.destinations())
         self.chargers = layout.cells_of(CHARGER)
-        self.docks = layout.cells_of(DOCK)
+        self.docks = layout.drop_offs()
         self.stations: dict[Cell, dict] = {c: {"occupant": None, "remaining": 0} for c in layout.cells_of(PACKING)}
         self.robots = self._spawn_robots(config.robot_count)
         self.metrics = MetricsTracker([r.id for r in self.robots])
@@ -91,6 +96,7 @@ class Simulator:
         self.tick += 1
         events: list[dict] = []
         self._arrivals(events)
+        self.receiving.step(self.tick, {r.pos for r in self.robots}, self._carried(), self._short_skus(), events)
         self._dispatch(events)
         positions = {r.id: r.pos for r in self.robots}
         priority = {r.id: self._priority(r, i) for i, r in enumerate(self.robots)}
@@ -130,15 +136,16 @@ class Simulator:
 
     def live_stats(self) -> dict:
         queued = sum(1 for o in self.open_orders.values() if o.status == "queued")
-        return self.metrics.live(
+        return {**self.metrics.live(
             self.tick, queued, len(self.open_orders) - queued,
             sum(r.battery for r in self.robots) / len(self.robots),
             sum(r.status == "charging" for r in self.robots),
             sum(r.status == "idle" for r in self.robots),
-        )
+        ), "restocked": self.receiving.restocked, "truck_deliveries": self.receiving.deliveries}
 
     def summary(self) -> dict:
-        return self.metrics.summary(self.tick)
+        return {**self.metrics.summary(self.tick), "restocked": self.receiving.restocked,
+                "truck_deliveries": self.receiving.deliveries}
 
     def snapshot(self, events: list[dict] | None = None) -> dict:
         return {
@@ -151,6 +158,7 @@ class Simulator:
             "stations": [{"x": c[0], "y": c[1], "occupant": s["occupant"], "remaining": s["remaining"]}
                          for c, s in self.stations.items()],
             "stock": dict(self.inventory.stock),
+            "receiving": self.receiving.view(self._carried()),
             "stats": self.live_stats(),
             "events": list(events or []),
         }
@@ -188,10 +196,45 @@ class Simulator:
         self.open_orders.pop(order.id, None)
         self.recent_finished.append(order)
 
+    def _carried(self) -> list:
+        return [r.pallet for r in self.robots if r.pallet is not None and r.pallet.cell is None]
+
+    def _short_skus(self) -> set[str]:
+        """Products that waiting orders need more of than the shelves have."""
+        return {i.sku for o in self.open_orders.values() if o.waiting_stock for i in o.items
+                if self.inventory.available(i.sku) < i.qty}
+
+    def _free_robots(self) -> list[Robot]:
+        return [r for r in self.robots if r.status in ("idle", "parking") and r.battery > DISPATCH_MIN_BATTERY]
+
+    def _assign_pallets(self, events: list[dict], urgent_only: bool) -> None:
+        """Urgent pallets go before orders: ones that waiting orders need, ones holding up a full bay, and
+        ones that have sat too long. The rest go to whoever is still free after the orders."""
+        short = self._short_skus()
+        jammed = self.receiving.blocked()
+        for pallet in sorted(self.receiving.open_pallets(), key=lambda p: (p.sku not in short, p.dropped_tick, p.id)):
+            urgent = pallet.sku in short or jammed or self.tick - pallet.dropped_tick >= STALE_PALLET
+            if urgent_only and not urgent:
+                continue
+            free = self._free_robots()
+            if not free:
+                return
+            robot = min(free, key=lambda r: (self.distance(r.pos, pallet.cell), r.id))
+            pallet.robot_id = robot.id
+            robot.pallet = pallet
+            self._go(robot, "to_unload", pallet.cell)
+            events.append({"type": "restock_assigned", "robot": robot.id, "pallet": pallet.id, "sku": pallet.sku})
+
     def _dispatch(self, events: list[dict]) -> None:
+        self._assign_pallets(events, urgent_only=True)
         queued = sorted((o for o in self.open_orders.values() if o.status == "queued"),
                         key=lambda o: (o.priority != "rush", o.created_tick, o.id))
         for order in queued:
+            if not self.inventory.can_fulfill(order.items) and self.receiving.active:
+                if not order.waiting_stock:
+                    order.waiting_stock = True
+                    events.append({"type": "order_waiting_stock", "order": order.id})
+                continue
             if not self.inventory.can_fulfill(order.items):
                 order.fail_reason = "out_of_stock"
                 order.set_status("failed", self.tick)
@@ -199,9 +242,10 @@ class Simulator:
                 self.metrics.record_failure()
                 events.append({"type": "order_failed", "order": order.id, "reason": "out_of_stock"})
                 continue
-            free = [r for r in self.robots if r.status in ("idle", "parking") and r.battery > DISPATCH_MIN_BATTERY]
+            free = self._free_robots()
             if not free:
                 continue
+            order.waiting_stock = False
             grouped: dict[Cell, list[OrderItem]] = {}
             for item in order.items:
                 grouped.setdefault(self.inventory.face[item.sku], []).append(item)
@@ -213,6 +257,7 @@ class Simulator:
             robot.task = Task(order.id, stops)
             self._go(robot, "to_pick", stops[0][0])
             events.append({"type": "order_assigned", "order": order.id, "robot": robot.id})
+        self._assign_pallets(events, urgent_only=False)
 
     def _order_stops(self, start: Cell, grouped: dict[Cell, list[OrderItem]]) -> list[tuple[Cell, list[OrderItem]]]:
         remaining = dict(grouped)
@@ -240,7 +285,11 @@ class Simulator:
 
     def _priority(self, r: Robot, index: int) -> tuple:
         rush = r.task is not None and self.orders[r.task.order_id].priority == "rush"
-        return (r.battery >= CRITICAL_BATTERY, not rush, not (r.carrying or r.package_id), index)
+        return (r.battery >= CRITICAL_BATTERY, not rush, not (r.carrying or r.package_id or self._loaded(r)), index)
+
+    @staticmethod
+    def _loaded(r: Robot) -> bool:
+        return r.pallet is not None and r.pallet.cell is None
 
     def _busy(self, cell: Cell, rid: str) -> bool:
         station = self.stations.get(cell)
@@ -408,6 +457,28 @@ class Simulator:
                 events.append({"type": "charged", "robot": r.id})
         elif r.status == "parking" and r.pos == r.target:
             self._go(r, "idle", None)
+        elif r.status == "to_unload" and r.pos == r.target:
+            r.status, r.work_ticks = "loading", LOAD_TICKS
+        elif r.status == "loading":
+            r.work_ticks -= 1
+            if r.work_ticks <= 0:
+                pallet = self.receiving.pallets.pop(r.pallet.id)
+                bay_cell, pallet.cell = pallet.cell, None
+                self._go(r, "to_shelf", self.inventory.face[pallet.sku])
+                events.append({"type": "pallet_loaded", "robot": r.id, "pallet": pallet.id, "sku": pallet.sku,
+                               "qty": pallet.qty, "at": list(bay_cell)})
+        elif r.status == "to_shelf" and r.pos == r.target:
+            r.status, r.work_ticks = "restocking", SHELVE_TICKS
+        elif r.status == "restocking":
+            r.work_ticks -= 1
+            if r.work_ticks <= 0:
+                pallet = r.pallet
+                self.inventory.stock[pallet.sku] += pallet.qty
+                self.receiving.restocked += pallet.qty
+                r.pallet = None
+                events.append({"type": "restocked", "robot": r.id, "sku": pallet.sku, "qty": pallet.qty,
+                               "at": list(r.pos)})
+                self._job_done(r, events)
 
     def _finish_pick(self, r: Robot, events: list[dict]) -> None:
         face, items = r.task.picks.pop(0)
@@ -437,9 +508,16 @@ class Simulator:
         order.set_status("shipping", self.tick)
         r.carrying = []
         r.package_id = package.id
-        r.task.dock = min(self.docks, key=lambda d: (self.distance(r.pos, d), d))
+        r.task.dock = self._choose_dock(r)
         self._go(r, "to_dock", r.task.dock)
         events.append({"type": "packed", "robot": r.id, "order": order.id, "package": package.id, "at": list(r.pos)})
+
+    def _choose_dock(self, r: Robot) -> Cell:
+        """A drop-off square in a shipping zone: the nearest one that no other robot is already heading to
+        or standing on, so a zone's squares share the work instead of everyone queueing for one."""
+        def load(cell: Cell) -> int:
+            return sum(1 for o in self.robots if o.id != r.id and (o.pos == cell or (o.target == cell and o.status == "to_dock")))
+        return min(self.docks, key=lambda d: (load(d), self.distance(r.pos, d), d))
 
     def _deliver(self, r: Robot, events: list[dict]) -> None:
         order = self.orders[r.task.order_id]
@@ -452,6 +530,9 @@ class Simulator:
                        "at": list(r.pos), "cycle_time": cycle})
         r.package_id = None
         r.task = None
+        self._job_done(r, events)
+
+    def _job_done(self, r: Robot, events: list[dict]) -> None:
         if r.charge_after_task:
             r.charge_after_task = False
             self._send_to_charger(r, events)
@@ -468,9 +549,13 @@ class Simulator:
             return
         if r.battery >= LOW_BATTERY or r.charge_after_task:
             return
-        if r.carrying or r.package_id:
+        if r.carrying or r.package_id or self._loaded(r):
             r.charge_after_task = True
             return
+        if r.pallet is not None:  # claimed a pallet but not loaded yet: leave it for someone else
+            r.pallet.robot_id = None
+            events.append({"type": "restock_requeued", "pallet": r.pallet.id, "robot": r.id})
+            r.pallet = None
         if r.task is not None:  # assigned, nothing picked yet: hand the order back
             order = self.orders[r.task.order_id]
             self.inventory.release([i for _, items in r.task.picks for i in items])
@@ -525,6 +610,7 @@ class Simulator:
             "order_id": r.task.order_id if r.task else None,
             "carrying": [i.to_dict() for i in r.carrying],
             "package_id": r.package_id,
+            "pallet": {"sku": r.pallet.sku, "qty": r.pallet.qty} if self._loaded(r) else None,
             "path": [list(c) for c in self._preview(r)],
             "q_scores": q_scores,
             "fallback_leg": r.fallback_leg,

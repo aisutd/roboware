@@ -1,4 +1,7 @@
 // Live session state over WebSocket: a pure reducer plus a reconnecting client.
+import { chatterFrom, trailsFrom } from '../lib/chatter';
+import { scheduleVans } from '../lib/shipments';
+
 export const initialSessionState = {
   connected: false,
   session: null,
@@ -9,13 +12,36 @@ export const initialSessionState = {
   orders: [],
   stations: [],
   stock: {},
+  // Delivery trucks, pallets on the unload bays and restock totals (see backend receiving.py).
+  receiving: null,
   stats: null,
   events: [],
   recentEvents: [],
+  metricSamples: [],
+  // Last achievement per robot ({ R1: { type: 'delivered', tick: 412 } }); drives the robots' happy faces.
+  robotCheers: {},
+  // Speech bubbles ({ R1: { kind, text, tick } }), yield nods ({ R2: tick }) and footprints ({ R1: [{ x, y, tick, dx, dy }] }).
+  robotChatter: {},
+  robotReactions: {},
+  robotTrails: {},
+  // Vans driving away from drop-off zones ({ id, door, side, tick, delay }); see lib/shipments.js.
+  shipments: [],
   error: null,
 };
 
 const MAX_RECENT_EVENTS = 50;
+const CHEER_EVENTS = new Set(['picked', 'packed', 'delivered', 'charged', 'restocked']);
+
+function cheersFrom(events, tick, previous) {
+  let next = previous;
+  for (const event of events) {
+    if (event.robot && CHEER_EVENTS.has(event.type)) {
+      if (next === previous) next = { ...previous };
+      next[event.robot] = { type: event.type, tick };
+    }
+  }
+  return next;
+}
 
 function pickFrame(m) {
   return {
@@ -25,6 +51,7 @@ function pickFrame(m) {
     orders: m.orders ?? [],
     stations: m.stations ?? [],
     stock: m.stock ?? {},
+    receiving: m.receiving ?? null,
     stats: m.stats ?? null,
     events: m.events ?? [],
   };
@@ -37,14 +64,33 @@ export function sessionReducer(state, message) {
     case 'disconnected':
       return { ...state, connected: false };
     case 'snapshot':
-      return { ...state, ...pickFrame(message), session: message.session, layout: message.layout, recentEvents: [], error: null };
+      return {
+        ...state, ...pickFrame(message), session: message.session, layout: message.layout, recentEvents: [],
+        robotCheers: {}, robotChatter: {}, robotReactions: {}, robotTrails: {}, shipments: [],
+        metricSamples: message.stats ? [{ ...message.stats, tick: message.tick ?? 0 }] : [], error: null,
+      };
     case 'frame': {
       const newest = [...(message.events ?? [])].reverse();
+      const samples = state.metricSamples;
+      const tick = message.tick ?? 0;
+      const sample = message.stats && (!samples.length || tick - samples[samples.length - 1].tick >= 10);
+      const robots = message.robots ?? [];
+      const { chatter, reactions } = chatterFrom({
+        previous: state.robotChatter, events: message.events ?? [], prevRobots: state.robots, robots, tick,
+      });
       return {
         ...state,
         ...pickFrame(message),
         session: message.session ?? state.session,
         recentEvents: [...newest, ...state.recentEvents].slice(0, MAX_RECENT_EVENTS),
+        robotCheers: cheersFrom(message.events ?? [], tick, state.robotCheers),
+        robotChatter: chatter,
+        robotReactions: reactions.length
+          ? { ...state.robotReactions, ...Object.fromEntries(reactions.map((id) => [id, tick])) }
+          : state.robotReactions,
+        robotTrails: trailsFrom(state.robotTrails, state.robots, robots, tick),
+        shipments: scheduleVans(state.shipments, message.events ?? [], tick, state.layout),
+        metricSamples: sample ? [...samples, { ...message.stats, tick }].slice(-100) : samples,
       };
     }
     case 'error':
