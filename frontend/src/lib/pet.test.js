@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHEER_TICKS, eyeRects, isWalking, petMood } from './pet';
+import { CHEER_TICKS, VISOR, botEyes, botTask, isWalking, petMood } from './pet';
 
 const robot = (patch) => ({ id: 'R1', status: 'idle', battery: 80, yielding: false, heading: 0, ...patch });
 
@@ -26,15 +26,28 @@ describe('robot pet faces', () => {
     expect(isWalking(robot({ status: 'to_charger', yielding: true }))).toBe(false);
     expect(isWalking(robot({ status: 'picking' }))).toBe(false);
   });
-  it('keeps both eyes on the head and glances by a quarter pixel', () => {
-    expect(eyeRects('walk', [1, 0])).toEqual([[3.25, 1, 1, 1], [8.25, 1, 1, 1]]);
-    expect(eyeRects('happy')).toHaveLength(6);
-    for (const face of ['blink', 'snooze', 'charge', 'focus', 'tired', 'surprised', 'idle']) {
-      for (const [x, y, w, h] of eyeRects(face)) {
-        expect(x).toBeGreaterThanOrEqual(2);
-        expect(x + w).toBeLessThanOrEqual(10);
-        expect(y + h).toBeLessThanOrEqual(2.2);
+  it('keeps both eyes inside the visor and glances towards where it drives', () => {
+    expect(botEyes('walk', [1, 0])).toEqual([[6.15, 4.2, 2, 1.8], [8.95, 4.2, 2, 1.8]]);
+    expect(botEyes('happy')).toHaveLength(6);
+    for (const face of ['blink', 'snooze', 'charge', 'focus', 'tired', 'surprised', 'idle', 'happy']) {
+      for (const glance of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        for (const [x, y, w, h] of botEyes(face, glance)) {
+          expect(x).toBeGreaterThanOrEqual(VISOR.x - 0.5);
+          expect(x + w).toBeLessThanOrEqual(VISOR.x + VISOR.w + 0.5);
+          expect(y).toBeGreaterThanOrEqual(VISOR.y);
+          expect(y + h).toBeLessThanOrEqual(VISOR.y + VISOR.h);
+        }
       }
     }
+  });
+  it('moves its arms for the job at hand', () => {
+    expect(botTask(robot({ status: 'picking' }))).toBe('pick');
+    expect(botTask(robot({ status: 'packing' }))).toBe('pack');
+    expect(botTask(robot({ status: 'loading' }))).toBe('lift');
+    expect(botTask(robot({ status: 'restocking' }))).toBe('lift');
+    expect(botTask(robot({ status: 'to_dock', package_id: 'PKG-1' }))).toBe('carry');
+    expect(botTask(robot({ status: 'to_shelf', pallet: { sku: 'SKU-001', qty: 4 } }))).toBe('carry');
+    expect(botTask(robot({ status: 'to_pick' }))).toBeNull();
+    expect(botTask(robot())).toBeNull();
   });
 });
