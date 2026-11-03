@@ -12,12 +12,13 @@ describe('warehouse renderer integration', () => {
     const html = renderToStaticMarkup(createElement(WarehouseMapCanvas, { layout, robots: [robot], selectedRobotId: 'R1' }));
     expect(html.match(/class="tile-base tile-cell/g)).toHaveLength(160);
     expect(html).toContain('left:906px;top:546px;width:44px;height:44px');
-    // Robots are a pixel pet in their own colour and stay upright whatever their heading.
-    // This one is travelling to the dock heading down, so it walks and glances down.
-    expect(html).toContain('class="robot-art robot-pet pet-walking"');
+    // Robots are a pixel warehouse droid in their own colour and stay upright whatever their heading.
+    // This one is travelling to the dock heading down, so it drives (treads rolling) and glances down.
+    expect(html).toContain('class="robot-art robot-pet bot bot-walk bot-task-carry pet-walking"'); // carrying items: arms up around the load
     expect(html).toContain('data-face="walk"');
-    expect(html).toContain('<rect x="3" y="1.25" width="1" height="1"');
-    expect(html).toMatch(/<path d="M2 0h1v1h-1z[^"]*" style="fill:#8eafe4">/);
+    expect(html).toContain('--bot:#8eafe4');
+    expect(html).toContain('<rect x="5.6" y="4.65" width="2" height="1.8"></rect>');
+    expect(html).toContain('class="bot-cleats"');
     // The selection ring takes the robot's own colour.
     expect(html).toContain('class="robot-puck selected" style="--robot:#8eafe4;');
     expect(html).not.toContain('rotate(');

@@ -1846,3 +1846,133 @@ input[type="range"].clay-slider:focus-visible { outline: 2px solid var(--tape); 
 .van-road { z-index: 14; }
 .van-road .dock-lane::before { background: repeating-linear-gradient(to top, rgb(95 211 143 / 55%) 0 10px, transparent 10px 22px); }
 .van-road .dock-lane::after { background: repeating-linear-gradient(-45deg, #5fd38f 0 6px, #14181d 6px 12px); }
+
+/* ==========================================================================
+   WAREHOUSE DROID: the robots. Pixel parts, smooth eased motion, one animation per action.
+   Parts pivot on their own boxes: arms at the shoulder, head and antenna at their base.
+   ========================================================================== */
+.bot { overflow: visible; }
+.bot.pet-walking, .bot.pet-hop, .bot.pet-nod { animation: none; }
+.bot .bot-body, .bot .bot-head, .bot .bot-antenna, .bot .bot-arm, .bot .bot-cleats, .bot .bot-battery-fill { transform-box: fill-box; }
+.bot .bot-body { transform-origin: 50% 100%; }
+.bot .bot-head, .bot .bot-antenna { transform-origin: 50% 100%; }
+.bot .bot-arm { transform-origin: 50% 0%; transition: transform .35s cubic-bezier(.3, 1.3, .5, 1); }
+.bot .bot-battery-fill { transform-origin: 0% 50%; }
+.bot-shadow { fill: #000; opacity: .28; transform-box: fill-box; transform-origin: 50% 50%; }
+.bot-led { animation: botLed 1.8s ease-in-out infinite; }
+.bot-chest rect { animation: botChest 2.4s steps(1, end) infinite; }
+.bot-chest .c2 { animation-delay: .8s; }
+.bot-chest .c3 { animation-delay: 1.6s; }
+.bot-eyes { filter: drop-shadow(0 0 .5px var(--eye)); }
+@keyframes botLed { 50% { opacity: .55; } }
+@keyframes botChest { 0%, 100% { opacity: 1; } 33% { opacity: .25; } }
+
+/* Idle: hover in place, antenna swaying. */
+.bot-idle .bot-body { animation: botFloat 2.6s ease-in-out infinite; }
+.bot-idle .bot-antenna { animation: botSway 3.2s ease-in-out infinite; }
+@keyframes botFloat { 50% { transform: translateY(-.45px); } }
+@keyframes botSway { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
+
+/* Driving: bob and wobble, treads rolling, arms swinging (or held up around a load). */
+.bot-walk .bot-body { animation: botDrive .34s ease-in-out infinite alternate; }
+.bot.pet-walking .bot-cleats { animation: botRoll .3s linear infinite; }
+.bot-walk .bot-arm-l { animation: botSwingL .34s ease-in-out infinite alternate; }
+.bot-walk .bot-arm-r { animation: botSwingR .34s ease-in-out infinite alternate; }
+.bot-walk .bot-antenna { animation: botSway .68s ease-in-out infinite; }
+@keyframes botDrive { from { transform: translateY(0) rotate(-1.5deg); } to { transform: translateY(-.6px) rotate(1.5deg); } }
+@keyframes botRoll { to { transform: translateX(-2px); } }
+@keyframes botSwingL { from { transform: rotate(18deg); } to { transform: rotate(-18deg); } }
+@keyframes botSwingR { from { transform: rotate(-18deg); } to { transform: rotate(18deg); } }
+.bot-task-carry .bot-arm-l { animation: botHoldL .34s ease-in-out infinite alternate; }
+.bot-task-carry .bot-arm-r { animation: botHoldR .34s ease-in-out infinite alternate; }
+@keyframes botHoldL { from { transform: rotate(-158deg); } to { transform: rotate(-166deg); } }
+@keyframes botHoldR { from { transform: rotate(158deg); } to { transform: rotate(166deg); } }
+
+/* Picking: reach up to the shelf and grab, eyes scanning. */
+.bot-task-pick .bot-arm-l { animation: botReachL .9s ease-in-out infinite; }
+.bot-task-pick .bot-arm-r { animation: botReachR .9s ease-in-out .08s infinite; }
+.bot-task-pick .bot-body { animation: botStretch .9s ease-in-out infinite; }
+@keyframes botReachL { 0%, 100% { transform: rotate(0); } 45%, 62% { transform: rotate(-150deg); } }
+@keyframes botReachR { 0%, 100% { transform: rotate(0); } 45%, 62% { transform: rotate(150deg); } }
+@keyframes botStretch { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-.6px) scaleY(1.03); } }
+.bot-scan { transform-box: fill-box; animation: botScan 1s ease-in-out infinite alternate; }
+@keyframes botScan { to { transform: translateY(3px); } }
+
+/* Packing: quick alternating taps, chest lights flickering. */
+.bot-task-pack .bot-arm-l { animation: botTapL .38s ease-in-out infinite alternate; }
+.bot-task-pack .bot-arm-r { animation: botTapR .38s ease-in-out -.19s infinite alternate; }
+.bot-task-pack .bot-chest rect { animation-duration: .5s; }
+.bot-task-pack .bot-body { animation: botFloat .76s ease-in-out infinite; }
+@keyframes botTapL { from { transform: rotate(-12deg); } to { transform: rotate(-72deg); } }
+@keyframes botTapR { from { transform: rotate(12deg); } to { transform: rotate(72deg); } }
+
+/* Loading and restocking: arms up holding the pallet, straining under the weight. */
+.bot-task-lift .bot-arm-l { transform: rotate(-164deg); animation: none; }
+.bot-task-lift .bot-arm-r { transform: rotate(164deg); animation: none; }
+.bot-task-lift .bot-body { animation: botStrain .5s ease-in-out infinite alternate; }
+@keyframes botStrain { from { transform: translateY(0) scaleY(1); } to { transform: translateY(.35px) scaleY(.96); } }
+
+/* Charging: body glow, battery filling on the visor, quick antenna flashes. */
+.bot-charge .bot-body { animation: botGlow 1.2s ease-in-out infinite; }
+.bot-charge .bot-battery-fill { animation: botFill 1.6s ease-in-out infinite; }
+.bot-charge .bot-led { animation: botLedBlink .5s steps(2, jump-none) infinite; }
+.bot-charge .bot-arm-l { transform: rotate(-22deg); }
+.bot-charge .bot-arm-r { transform: rotate(22deg); }
+@keyframes botGlow { 50% { filter: drop-shadow(0 0 1.1px #ffe066); } }
+@keyframes botFill { 0% { transform: scaleX(.05); } 80%, 100% { transform: scaleX(1); } }
+@keyframes botLedBlink { 50% { opacity: .2; } }
+
+/* Napping: slow breathing, antenna drooped, visor dimmed, arms slack. */
+.bot-snooze .bot-body { animation: botBreathe 2.8s ease-in-out infinite; }
+.bot-snooze .bot-antenna { transform: rotate(38deg); }
+.bot-snooze .bot-led { animation: none; opacity: .6; }
+.bot-snooze .bot-visor { opacity: .85; }
+.bot-snooze .bot-arm-l { transform: rotate(12deg); }
+.bot-snooze .bot-arm-r { transform: rotate(-12deg); }
+@keyframes botBreathe { 0%, 100% { transform: translateY(.5px) scaleY(1); } 50% { transform: translateY(.75px) scaleY(.95); } }
+
+/* Cheering: hop with squash and stretch, both arms waving, sparkles. */
+.bot-happy .bot-body { animation: botHop .6s ease-out infinite; }
+.bot-happy .bot-shadow { animation: botShadow .6s ease-out infinite; }
+.bot-happy .bot-arm-l { animation: botWaveL .3s ease-in-out infinite alternate; }
+.bot-happy .bot-arm-r { animation: botWaveR .3s ease-in-out infinite alternate; }
+.bot-sparkles rect { transform-box: fill-box; transform-origin: center; animation: botTwinkle .6s ease-in-out infinite; }
+.bot-sparkles .s2 { animation-delay: .2s; }
+.bot-sparkles .s3 { animation-delay: .4s; }
+@keyframes botHop {
+  0% { transform: translateY(0) scale(1.07, .93); }
+  32% { transform: translateY(-2.6px) scale(.95, 1.06); }
+  58% { transform: translateY(0) scale(1.08, .92); }
+  75%, 100% { transform: translateY(0) scale(1); }
+}
+@keyframes botShadow { 32% { transform: scale(.7); opacity: .16; } }
+@keyframes botWaveL { from { transform: rotate(-150deg); } to { transform: rotate(-115deg); } }
+@keyframes botWaveR { from { transform: rotate(150deg); } to { transform: rotate(115deg); } }
+@keyframes botTwinkle { 0%, 100% { transform: scale(.3); opacity: 0; } 50% { transform: scale(1.2); opacity: 1; } }
+
+/* Startled (giving way): a jolt, arms flung up, an exclamation mark. */
+.bot-surprised .bot-body { animation: botJolt .5s ease-out both; }
+.bot-surprised .bot-arm-l { transform: rotate(-125deg); }
+.bot-surprised .bot-arm-r { transform: rotate(125deg); }
+.bot-alert { transform-box: fill-box; transform-origin: 50% 100%; animation: botAlert .6s ease-in-out infinite alternate; }
+@keyframes botJolt { 0% { transform: translateY(0); } 25% { transform: translateY(-1.6px) scale(.96, 1.05); } 60% { transform: translateY(.2px) scale(1.03, .97); } 100% { transform: translateY(0); } }
+@keyframes botAlert { from { transform: translateY(0) scale(1); } to { transform: translateY(-.5px) scale(1.12); } }
+
+/* Low battery: slow sway, arms hanging, red antenna blinking, a sweat drop. */
+.bot-tired .bot-body { animation: botSag 3s ease-in-out infinite; }
+.bot-tired .bot-led { animation: botLedBlink .7s steps(2, jump-none) infinite; }
+.bot-tired .bot-arm-l { transform: rotate(7deg); }
+.bot-tired .bot-arm-r { transform: rotate(-7deg); }
+.bot-sweat { transform-box: fill-box; animation: botSweat 1.4s ease-in infinite; }
+@keyframes botSag { 0%, 100% { transform: translateY(.4px) rotate(-2.5deg); } 50% { transform: translateY(.4px) rotate(2.5deg); } }
+@keyframes botSweat { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(2.4px); opacity: 0; } }
+
+/* Thanked by another robot: a little nod. Now and then on its own: a hop. */
+.bot.pet-nod .bot-head { animation: botNod .45s ease-in-out 2; }
+.bot.pet-hop .bot-body { animation: botHop .6s ease-out 1; }
+@keyframes botNod { 50% { transform: translateY(.9px) rotate(-4deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .bot .bot-body, .bot .bot-arm, .bot .bot-antenna, .bot .bot-head, .bot .bot-cleats, .bot-led, .bot-chest rect, .bot-scan,
+  .bot-sparkles rect, .bot-alert, .bot-sweat, .bot-shadow, .bot-battery-fill { animation: none !important; }
+}

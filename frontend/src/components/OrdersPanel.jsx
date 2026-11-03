@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { PET_BODY, PET_LEGS_A, PET_LEGS_B } from '../lib/pet';
+import { BOT_SILHOUETTE } from '../lib/pet';
 import { STAGE_ICONS } from '../lib/pixelArt';
 import { PixelIcon } from './PixelIcon';
 import { RobotPet } from './RobotPet';
@@ -106,8 +106,8 @@ function TicketRobot({ order, robot, name, cheer, tick, onSelectRobot }) {
   if (!robot) {
     return (
       <span className="ticket-robot-panel empty" title={order.robot_id ? `${order.robot_id}` : 'Waiting for a free robot'}>
-        <svg className="ticket-ghost" viewBox="-1 -3 14 14" shapeRendering="crispEdges" aria-hidden="true">
-          <path d={`${PET_BODY}${PET_LEGS_A}${PET_LEGS_B}`} />
+        <svg className="ticket-ghost" viewBox="-1.5 -1.5 19 19" shapeRendering="crispEdges" aria-hidden="true">
+          <path d={BOT_SILHOUETTE} />
         </svg>
         <span className="ticket-robot-id">{order.robot_id ?? '…'}</span>
       </span>
